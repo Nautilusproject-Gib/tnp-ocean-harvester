@@ -1,0 +1,284 @@
+# TNP Gibraltar Ocean Observatory - harvester configuration
+# ------------------------------------------------------------------
+# Areas are used for gridded satellite products (statistics over all
+# valid pixels in the box). Points are used for model/station series
+# (nearest valid sea cell is used). Longitudes are degrees east.
+
+areas:
+  bay_of_gibraltar:
+    name: Bay of Gibraltar
+    bbox: [-5.45, 36.07, -5.35, 36.18]      # [lon_min, lat_min, lon_max, lat_max]
+  gibraltar_eastside:
+    name: Gibraltar Eastside
+    bbox: [-5.34, 36.08, -5.27, 36.18]
+  strait_of_gibraltar:
+    name: Strait of Gibraltar
+    bbox: [-5.75, 35.85, -5.40, 36.05]
+  western_alboran:
+    name: Western Alboran Sea
+    bbox: [-5.25, 35.90, -4.50, 36.40]
+  gibraltar_20km:
+    name: Gibraltar 20 km box
+    bbox: [-5.50, 36.00, -5.20, 36.25]
+
+points:
+  europa_point:
+    name: Europa Point offshore
+    lat: 36.09
+    lon: -5.33
+  bay_centre:
+    name: Bay of Gibraltar centre
+    lat: 36.12
+    lon: -5.40
+  gibraltar_airport:
+    name: Gibraltar Airport (LXGB)
+    lat: 36.151
+    lon: -5.349
+  aeronet_malaga:            # location code used automatically for AERONET site "Malaga"
+    name: AERONET Malaga
+    lat: 36.715
+    lon: -4.478
+
+# Default start for "as far back as the source allows" backfills.
+# Each source clips this to its own coverage.
+backfill_start: "1982-01-01"
+
+sources:
+
+  # ---------------- Copernicus Marine (free account needed) ----------------
+  cmems_med_chl_my:
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean ocean colour L3 multi-sensor 1 km, multi-year (reprocessed)
+    dataset_id: cmems_obs-oc_med_bgc-plankton_my_l3-multi-1km_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_MY_009_143
+    variables: {CHL: chl}
+    earliest: "1997-09-16"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_chl_nrt:
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean ocean colour L3 multi-sensor 1 km, near real time
+    dataset_id: cmems_obs-oc_med_bgc-plankton_nrt_l3-multi-1km_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_NRT_009_141
+    variables: {CHL: chl}
+    rolling_window_days: 30          # NRT only keeps recent weeks online
+    lookback_days: 7
+
+  cmems_med_kd490_my:
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean transparency (KD490) L3 multi-sensor 1 km, multi-year
+    dataset_id: cmems_obs-oc_med_bgc-transp_my_l3-multi-1km_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_MY_009_143
+    variables: {KD490: kd490}
+    earliest: "1997-09-16"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_kd490_nrt:
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean transparency (KD490) L3 multi-sensor 1 km, near real time
+    dataset_id: cmems_obs-oc_med_bgc-transp_nrt_l3-multi-1km_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_NRT_009_141
+    variables: {KD490: kd490}
+    rolling_window_days: 30
+    lookback_days: 7
+
+  cmems_med_sst_rep:
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean L4 foundation SST 0.05 deg, reprocessed
+    dataset_id: cmems_SST_MED_SST_L4_REP_OBSERVATIONS_010_021
+    product: SST_MED_SST_L4_REP_OBSERVATIONS_010_021
+    variables: {analysed_sst: sst}
+    kelvin_to_celsius: [analysed_sst]
+    earliest: "1982-01-01"
+    chunk_days: 730
+    lookback_days: 10
+
+  cmems_med_sst_nrt:
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean L4 foundation SST 1/100 deg, near real time
+    dataset_id: SST_MED_SST_L4_NRT_OBSERVATIONS_010_004_c_V2
+    product: SST_MED_SST_L4_NRT_OBSERVATIONS_010_004
+    variables: {analysed_sst: sst}
+    kelvin_to_celsius: [analysed_sst]
+    earliest: "2008-01-01"
+    chunk_days: 365
+    lookback_days: 5
+
+  cmems_med_waves_my:
+    enabled: true
+    type: copernicus_point
+    description: Mediterranean wave reanalysis 4.2 km, hourly
+    dataset_id: cmems_mod_med_wav_my_4.2km_PT1H-i
+    product: MEDSEA_MULTIYEAR_WAV_006_012
+    variables: {VHM0: wave_hs, VMDR: wave_dir, VTM10: wave_tm10, VTPK: wave_tp}
+    points: [europa_point, bay_centre]
+    earliest: "1985-01-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_waves_anfc:
+    enabled: true
+    type: copernicus_point
+    description: Mediterranean wave analysis and forecast 4.2 km, hourly
+    dataset_id: cmems_mod_med_wav_anfc_4.2km_PT1H-i
+    product: MEDSEA_ANALYSISFORECAST_WAV_006_017
+    variables: {VHM0: wave_hs, VMDR: wave_dir, VTM10: wave_tm10, VTPK: wave_tp}
+    points: [europa_point, bay_centre]
+    earliest: "2021-11-30"
+    chunk_days: 180
+    lookback_days: 3
+    include_forecast_days: 0          # set >0 to also store forecast hours
+
+  # ---------------- NASA Ocean Biology DAAC (free Earthdata login) ----------------
+  nasa_par_seawifs:
+    enabled: true
+    type: nasa_l3m
+    description: SeaWiFS L3 mapped daily PAR 9 km
+    short_name: SEASTAR_SEAWIFS_GAC_L3m_PAR
+    granule_pattern: "*.L3m.DAY.PAR.par.9km*"
+    variable: par
+    code: par
+    earliest: "1997-09-04"
+    latest: "2010-12-11"
+    lookback_days: 0
+
+  nasa_par_modisa:
+    enabled: true
+    type: nasa_l3m
+    description: MODIS-Aqua L3 mapped daily PAR 4 km
+    short_name: MODISA_L3m_PAR
+    granule_pattern: "*.L3m.DAY.PAR.par.4km*"
+    variable: par
+    code: par
+    earliest: "2002-07-04"
+    lookback_days: 10
+
+  nasa_par_pace_nrt:
+    enabled: true
+    type: nasa_l3m
+    description: PACE OCI L3 mapped daily PAR 4 km, near real time
+    short_name: PACE_OCI_L3M_PAR_NRT
+    granule_pattern: "*.L3m.DAY.PAR*.4km*"
+    variable: par
+    code: par
+    earliest: "2024-03-05"
+    lookback_days: 10
+
+  # ---------------- Weather station: Gibraltar Airport (no account) ----------------
+  ncei_isd_lxgb:
+    enabled: true
+    type: ncei_isd
+    description: NOAA NCEI Integrated Surface Database, Gibraltar (LXGB) hourly reports
+    station_id: "08495099999"
+    point: gibraltar_airport
+    earliest: "1973-01-01"
+    lookback_days: 5
+
+  # ---------------- Open-Meteo (no account, non-commercial use) ----------------
+  openmeteo_era5:
+    enabled: true
+    type: openmeteo_archive
+    description: ERA5 reanalysis via Open-Meteo, hourly wind, rain, air temperature
+    points: [gibraltar_airport]
+    model: era5
+    variables:
+      wind_speed_10m: wind_speed
+      wind_direction_10m: wind_dir
+      wind_gusts_10m: wind_gust
+      precipitation: precip
+      temperature_2m: air_temp
+    earliest: "1940-01-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  openmeteo_cams_dust:
+    enabled: true
+    type: openmeteo_airquality
+    description: CAMS atmospheric composition via Open-Meteo, hourly dust and aerosols
+    points: [gibraltar_airport]
+    variables:
+      dust: dust_sfc
+      aerosol_optical_depth: aod_550
+      pm10: pm10_model
+    earliest: "2022-08-01"
+    chunk_days: 90
+    lookback_days: 5
+
+  # ---------------- CAMS reanalysis (free ADS account) ----------------
+  cams_eac4_dust:
+    enabled: true
+    type: cams_eac4
+    description: CAMS global reanalysis EAC4, 3-hourly dust and total AOD at 550 nm
+    point: europa_point
+    variables:
+      duaod550: dust_aod_550
+      aod550: aod_550
+    earliest: "2003-01-01"
+    chunk_days: 31
+    lookback_days: 0
+
+  # ---------------- AERONET sun photometers (no account) ----------------
+  aeronet:
+    enabled: true
+    type: aeronet
+    description: NASA AERONET v3 Level 1.5 daily averages
+    sites: [Malaga]
+    earliest: "1993-01-01"
+    lookback_days: 10
+
+# Variables the dashboard knows about
+variables:
+  chl:          {name: Chlorophyll-a, unit: mg m-3}
+  kd490:        {name: Diffuse attenuation at 490 nm, unit: m-1}
+  sst:          {name: Sea surface temperature (foundation), unit: degC}
+  par:          {name: Photosynthetically available radiation, unit: einstein m-2 day-1}
+  wave_hs:      {name: Significant wave height, unit: m}
+  wave_dir:     {name: Mean wave direction (from), unit: deg}
+  wave_tm10:    {name: Mean wave period Tm-10, unit: s}
+  wave_tp:      {name: Peak wave period, unit: s}
+  wind_speed:   {name: Wind speed at 10 m, unit: m s-1}
+  wind_dir:     {name: Wind direction (from), unit: deg}
+  wind_gust:    {name: Wind gust, unit: m s-1}
+  precip:       {name: Precipitation, unit: mm}
+  precip_1h:    {name: Precipitation (station, 1 h), unit: mm}
+  precip_3h:    {name: Precipitation (station, 3 h), unit: mm}
+  precip_6h:    {name: Precipitation (station, 6 h), unit: mm}
+  precip_12h:   {name: Precipitation (station, 12 h), unit: mm}
+  precip_24h:   {name: Precipitation (station, 24 h), unit: mm}
+  slp:          {name: Sea level pressure, unit: hPa}
+  air_temp:     {name: Air temperature, unit: degC}
+  dust_sfc:     {name: Surface dust concentration (CAMS), unit: ug m-3}
+  aod_550:      {name: Aerosol optical depth 550 nm, unit: "1"}
+  dust_aod_550: {name: Dust aerosol optical depth 550 nm, unit: "1"}
+  pm10_model:   {name: PM10 (CAMS model), unit: ug m-3}
+  aeronet_aod_500: {name: AERONET aerosol optical depth 500 nm, unit: "1"}
+  aeronet_ae_440_870: {name: AERONET Angstrom exponent 440-870 nm, unit: "1"}
+
+# Order of preference when the dashboard export merges overlapping sources
+export:
+  output_dir: public/data
+  daily_priority:
+    chl: [cmems_med_chl_my, cmems_med_chl_nrt]
+    kd490: [cmems_med_kd490_my, cmems_med_kd490_nrt]
+    sst: [cmems_med_sst_rep, cmems_med_sst_nrt]
+    par: [nasa_par_pace_nrt, nasa_par_modisa, nasa_par_seawifs]
+    wave_hs: [cmems_med_waves_my, cmems_med_waves_anfc]
+    wave_tm10: [cmems_med_waves_my, cmems_med_waves_anfc]
+    wave_tp: [cmems_med_waves_my, cmems_med_waves_anfc]
+    wind_speed: [ncei_isd_lxgb, openmeteo_era5]
+    wind_gust: [ncei_isd_lxgb, openmeteo_era5]
+    precip: [openmeteo_era5]
+    air_temp: [ncei_isd_lxgb, openmeteo_era5]
+    dust_sfc: [openmeteo_cams_dust]
+    dust_aod_550: [cams_eac4_dust]
+    aod_550: [openmeteo_cams_dust, cams_eac4_dust]
+    aeronet_aod_500: [aeronet]
+    aeronet_ae_440_870: [aeronet]
