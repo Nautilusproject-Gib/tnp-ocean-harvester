@@ -48,7 +48,14 @@ class CamsEac4(Source):
         out = []
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "eac4.download"
-            client.retrieve("cams-global-reanalysis-eac4", request).download(str(target))
+            try:
+                client.retrieve("cams-global-reanalysis-eac4", request).download(str(target))
+            except Exception as e:
+                if "valid combination" in str(e):
+                    # EAC4 runs months behind real time; dates past its end are simply not there yet
+                    print(f"[{self.code}]   no EAC4 data for {start} .. {end} (outside the reanalysis period)")
+                    return []
+                raise
             paths = [target]
             if zipfile.is_zipfile(target):
                 with zipfile.ZipFile(target) as z:

@@ -16,8 +16,17 @@ from .base import Source
 _logged_in = False
 
 
+def _force_ipv4():
+    """GitHub-hosted runners have no IPv6 route; NASA hosts publish IPv6 addresses, which can
+    surface as '[Errno 101] Network is unreachable'. Make requests/urllib3 use IPv4 only."""
+    import socket
+    import urllib3.util.connection as urllib3_conn
+    urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
+
+
 def _login():
     global _logged_in
+    _force_ipv4()
     import earthaccess
     if not _logged_in:
         auth = earthaccess.login(strategy="environment")

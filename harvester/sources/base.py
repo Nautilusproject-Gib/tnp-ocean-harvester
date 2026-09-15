@@ -52,7 +52,7 @@ class Source:
                 max(b[2] for b in boxes) + pad, max(b[3] for b in boxes) + pad)
 
     @staticmethod
-    def http_get(url, params=None, timeout=120, retries=3, **kw):
+    def http_get(url, params=None, timeout=120, retries=5, **kw):
         last = None
         for attempt in range(retries):
             try:
@@ -65,7 +65,7 @@ class Source:
             except requests.RequestException as e:  # pragma: no cover - network
                 last = e
                 import time
-                time.sleep(5 * (attempt + 1))
+                time.sleep(30 * (attempt + 1))  # rides out brief 502s from busy APIs
         raise SourceError(f"GET {url} failed after {retries} attempts: {last}")
 
     def fetch(self, start: date, end: date):  # pragma: no cover - abstract
