@@ -186,7 +186,7 @@ sources:
   openmeteo_era5:
     enabled: true
     type: openmeteo_archive
-    description: ERA5 reanalysis via Open-Meteo, hourly wind, rain, air temperature
+    description: ERA5 reanalysis via Open-Meteo, hourly wind, rain, air temperature, solar radiation
     points: [gibraltar_airport]
     model: era5
     variables:
@@ -195,6 +195,7 @@ sources:
       wind_gusts_10m: wind_gust
       precipitation: precip
       temperature_2m: air_temp
+      shortwave_radiation: sw_rad      # used for the ERA5 PAR estimate
     earliest: "1940-01-01"
     chunk_days: 365
     lookback_days: 10
@@ -256,6 +257,8 @@ variables:
   precip_24h:   {name: Precipitation (station, 24 h), unit: mm}
   slp:          {name: Sea level pressure, unit: hPa}
   air_temp:     {name: Air temperature, unit: degC}
+  sw_rad:       {name: Incoming shortwave radiation (ERA5), unit: W m-2}
+  par_era5:     {name: PAR estimated from ERA5 shortwave radiation, unit: einstein m-2 day-1}
   dust_sfc:     {name: Surface dust concentration (CAMS), unit: ug m-3}
   aod_550:      {name: Aerosol optical depth 550 nm, unit: "1"}
   dust_aod_550: {name: Dust aerosol optical depth 550 nm, unit: "1"}
