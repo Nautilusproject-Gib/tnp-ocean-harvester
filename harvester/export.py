@@ -19,6 +19,20 @@ from .db import Database
 from .stats import circular_mean_deg
 
 SUM_VARS = {"precip", "precip_1h", "precip_3h", "precip_6h", "precip_12h", "precip_24h"}
+
+# PAR from broadband shortwave radiation:
+#   PAR fraction of incoming shortwave ~0.48, and 4.57 umol photons per joule of PAR.
+#   daily mean W m-2 * 86400 s * 0.48 * 4.57e-6 mol/J  ->  einstein (mol photons) m-2 day-1
+PAR_FRACTION = 0.48
+PHOTONS_PER_JOULE = 4.57e-6
+PAR_FACTOR = 86400 * PAR_FRACTION * PHOTONS_PER_JOULE   # ~0.1895
+
+
+def par_from_shortwave(hourly_sw: pd.Series) -> pd.Series:
+    """Daily PAR (E m-2 d-1) from hourly mean shortwave radiation (W m-2); complete days only."""
+    return hourly_sw * PAR_FACTOR
+
+
 MAX_VARS = {"wind_gust"}
 
 
@@ -85,9 +99,19 @@ def export(config: dict, db: Database, log=print):
 
     grouped = defaultdict(dict)  # (variable, location) -> {source: daily series}
     for source, variable, location in db.series_keys():
-        s = daily_aggregate(db.fetch_series(variable, location, source), variable)
-        if not s.empty:
-            grouped[(variable, location)][source] = s
+        series = db.fetch_series(variable, location, source)
+        s = daily_aggregate(series, variable)
+        if s.empty:
+            continue
+        grouped[(variable, location)][source] = s
+        if variable == "sw_rad":
+            # derived series kept separate from satellite PAR, so the two are never silently mixed
+            df = pd.DataFrame(series, columns=["t", "v"])
+            df["t"] = pd.to_datetime(df["t"])
+            counts = df.groupby(df["t"].dt.normalize())["v"].count()
+            complete = s[counts.reindex(s.index).fillna(0) >= 20]
+            if not complete.empty:
+                grouped[("par_era5", location)][source] = par_from_shortwave(complete)
 
     latest = []
     for (variable, location), per_source in sorted(grouped.items()):
