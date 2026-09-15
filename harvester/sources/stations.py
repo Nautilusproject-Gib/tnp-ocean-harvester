@@ -18,7 +18,9 @@ from .base import Source
 # ----------------------------------------------------------------------------------------------
 # NOAA ISD
 # ----------------------------------------------------------------------------------------------
-ISD_URL = "https://www.ncei.noaa.gov/data/global-hourly/access/{year}/{station}.csv"
+# NCEI retired the www.ncei.noaa.gov/data/global-hourly download path on 31 July 2026.
+# The same CSV files now live in the NOAA Open Data Dissemination bucket on AWS.
+ISD_URL = "https://noaa-global-hourly-pds.s3.amazonaws.com/{year}/{station}.csv"
 _BAD_QC = set("2367")
 
 
@@ -113,8 +115,10 @@ class NceiIsd(Source):
     def fetch(self, start: date, end: date):
         out = []
         for year in range(start.year, end.year + 1):
-            r = self.http_get(ISD_URL.format(year=year, station=self.cfg["station_id"]), timeout=300)
-            if r.status_code == 404:
+            url = ISD_URL.format(year=year, station=self.cfg["station_id"])
+            r = self.http_get(url, timeout=300)
+            if r.status_code in (403, 404):
+                print(f"[{self.code}]   no file for {year} yet ({r.status_code}) at {url}")
                 continue
             out.extend(parse_isd_csv(r.text, self.code, self.cfg["point"], start, end))
         return out
@@ -193,7 +197,7 @@ AERONET_URL = "https://aeronet.gsfc.nasa.gov/cgi-bin/print_web_data_v3"
 
 def parse_aeronet_daily(text: str, source: str):
     lines = text.splitlines()
-    header_idx = next((i for i, ln in enumerate(lines) if ln.startswith("AERONET_Site")), None)
+    header_idx = next((i for i, ln in enumerate(lines) if ln.strip().startswith("AERONET_Site")), None)
     if header_idx is None:
         return []
     df = pd.read_csv(io.StringIO("\n".join(lines[header_idx:])), low_memory=False)
@@ -221,5 +225,9 @@ class Aeronet(Source):
                 "AOD15": 1, "AVG": 20, "if_no_html": 1,
             }
             r = self.http_get(AERONET_URL, params=params, timeout=180)
-            out.extend(parse_aeronet_daily(r.text, self.code))
+            rows = parse_aeronet_daily(r.text, self.code)
+            if not rows:
+                snippet = " | ".join(r.text.strip().splitlines()[:6])[:400]
+                print(f"[{self.code}]   no rows for site {site}; server said: {snippet}")
+            out.extend(rows)
         return out

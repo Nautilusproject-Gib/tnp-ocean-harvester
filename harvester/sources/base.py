@@ -58,7 +58,7 @@ class Source:
             try:
                 r = requests.get(url, params=params, timeout=timeout,
                                  headers={"User-Agent": USER_AGENT}, **kw)
-                if r.status_code == 404:
+                if r.status_code in (403, 404):
                     return r
                 r.raise_for_status()
                 return r
