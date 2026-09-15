@@ -1,0 +1,76 @@
+name: Daily harvest
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: tnp-harvester
+  cancel-in-progress: false
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+  EARTHDATA_USERNAME: ${{ secrets.EARTHDATA_USERNAME }}
+  EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
+  ADS_API_KEY: ${{ secrets.ADS_API_KEY }}
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Offline tests
+        run: python -m unittest discover -s tests
+
+      - name: Restore SQLite database
+        if: env.DATABASE_URL == ''
+        uses: actions/cache/restore@v4
+        with:
+          path: data/tnp_ocean.db
+          key: tnp-db-${{ github.run_id }}
+          restore-keys: tnp-db-
+
+      - name: Harvest new data
+        run: python harvest.py update --max-minutes 240
+
+      - name: Export dashboard JSON
+        if: always()
+        run: python harvest.py export && python harvest.py status
+
+      - name: Save SQLite database
+        if: always() && env.DATABASE_URL == ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/tnp_ocean.db
+          key: tnp-db-${{ github.run_id }}
+
+      - name: Publish dashboard data to GitHub Pages
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: harvest
+    if: always()
+    runs-on: ubuntu-latest
+    environment: github-pages
+    steps:
+      - uses: actions/deploy-pages@v4
