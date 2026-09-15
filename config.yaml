@@ -222,8 +222,9 @@ sources:
       duaod550: dust_aod_550
       aod550: aod_550
     earliest: "2003-01-01"
-    chunk_days: 31
+    chunk_days: 92
     lookback_days: 0
+    skip_daily_update: true        # EAC4 lags real time; the backfill workflow keeps it filled
 
   # ---------------- AERONET sun photometers (no account) ----------------
   aeronet:
