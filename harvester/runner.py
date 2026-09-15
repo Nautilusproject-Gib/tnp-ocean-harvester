@@ -27,6 +27,8 @@ def date_chunks(start: date, end: date, days: int, reverse=False):
 
 
 def plan_update(cfg: dict, latest: datetime | None, today: date) -> tuple[date, date] | None:
+    if cfg.get("skip_daily_update"):
+        return None  # e.g. reanalyses that lag real time by months; filled by the backfill instead
     lookback = int(cfg.get("lookback_days", 5))
     window = cfg.get("rolling_window_days")
     if latest is not None:
