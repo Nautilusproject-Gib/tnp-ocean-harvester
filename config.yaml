@@ -145,6 +145,344 @@ sources:
     lookback_days: 3
     include_forecast_days: 0          # set >0 to also store forecast hours
 
+  # ---- Copernicus Marine: more satellite ocean colour (same login) ----
+  cmems_med_pft_my:
+    label: Copernicus reprocessed (MY)
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean ocean colour L3 multi-sensor 1 km, phytoplankton groups and size classes, multi-year
+    dataset_id: cmems_obs-oc_med_bgc-plankton_my_l3-multi-1km_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_MY_009_143
+    variables: &pft_vars
+      DIATO:  {code: diatoms, match: diatom}
+      DINO:   {code: dinoflagellates, match: dinophyte}
+      HAPTO:  {code: haptophytes, match: haptophyte}
+      CRYPTO: {code: cryptophytes, match: cryptophyte}
+      GREEN:  {code: green_algae, match: greenalgae}
+      PROKAR: {code: prokaryotes, match: prokaryote}
+      MICRO:  {code: micro_phyto, match: microphytoplankton}
+      NANO:   {code: nano_phyto, match: nanophytoplankton}
+      PICO:   {code: pico_phyto, match: picophytoplankton}
+    earliest: "1997-09-16"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_pft_nrt:
+    label: Copernicus near real time
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean ocean colour L3 multi-sensor 1 km, phytoplankton groups and size classes, near real time
+    dataset_id: cmems_obs-oc_med_bgc-plankton_nrt_l3-multi-1km_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_NRT_009_141
+    variables: *pft_vars
+    rolling_window_days: 30
+    lookback_days: 7
+
+  cmems_med_chl_olci_my:
+    label: Copernicus OLCI 300 m (MY)
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean ocean colour L3 Sentinel-3 OLCI 300 m chlorophyll, multi-year
+    dataset_id: cmems_obs-oc_med_bgc-plankton_my_l3-olci-300m_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_MY_009_143
+    variables: {CHL: chl}
+    earliest: "2016-04-26"
+    chunk_days: 60                   # 300 m pixels: smaller chunks keep memory use down
+    lookback_days: 10
+
+  cmems_med_chl_olci_nrt:
+    label: Copernicus OLCI 300 m (near real time)
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean ocean colour L3 Sentinel-3 OLCI 300 m chlorophyll, near real time
+    dataset_id: cmems_obs-oc_med_bgc-plankton_nrt_l3-olci-300m_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_NRT_009_141
+    variables: {CHL: chl}
+    rolling_window_days: 30
+    lookback_days: 7
+
+  cmems_med_kd490_olci_my:
+    label: Copernicus OLCI 300 m (MY)
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean transparency L3 Sentinel-3 OLCI 300 m KD490, multi-year
+    dataset_id: cmems_obs-oc_med_bgc-transp_my_l3-olci-300m_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_MY_009_143
+    variables: {KD490: kd490}
+    earliest: "2016-04-26"
+    chunk_days: 60
+    lookback_days: 10
+
+  cmems_med_kd490_olci_nrt:
+    label: Copernicus OLCI 300 m (near real time)
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean transparency L3 Sentinel-3 OLCI 300 m KD490, near real time
+    dataset_id: cmems_obs-oc_med_bgc-transp_nrt_l3-olci-300m_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_NRT_009_141
+    variables: {KD490: kd490}
+    rolling_window_days: 30
+    lookback_days: 7
+
+  cmems_med_optics_my:
+    label: Copernicus reprocessed (MY)
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean ocean colour L3 multi-sensor 1 km inherent optical properties, multi-year
+    dataset_id: cmems_obs-oc_med_bgc-optics_my_l3-multi-1km_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_MY_009_143
+    variables: {ADG443: cdom_adg443, BBP443: bbp443}
+    earliest: "1997-09-16"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_optics_nrt:
+    label: Copernicus near real time
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean ocean colour L3 multi-sensor 1 km inherent optical properties, near real time
+    dataset_id: cmems_obs-oc_med_bgc-optics_nrt_l3-multi-1km_P1D
+    product: OCEANCOLOUR_MED_BGC_L3_NRT_009_141
+    variables: {ADG443: cdom_adg443, BBP443: bbp443}
+    rolling_window_days: 30
+    lookback_days: 7
+
+  cmems_med_pp_my:
+    label: Copernicus reprocessed (MY)
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean satellite primary production L4 multi-sensor 4 km, multi-year
+    dataset_id: cmems_obs-oc_med_bgc-pp_my_l4-multi-4km_P1D
+    product: OCEANCOLOUR_MED_BGC_L4_MY_009_144
+    variables: {PP: {code: pp_sat, match: primary}}
+    earliest: "1997-09-16"
+    chunk_days: 730
+    lookback_days: 10
+
+  cmems_med_pp_nrt:
+    label: Copernicus near real time
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean satellite primary production L4 multi-sensor 4 km, near real time
+    dataset_id: cmems_obs-oc_med_bgc-pp_nrt_l4-multi-4km_P1D
+    product: OCEANCOLOUR_MED_BGC_L4_NRT_009_142
+    variables: {PP: {code: pp_sat, match: primary}}
+    rolling_window_days: 30
+    lookback_days: 7
+
+  # ---- Copernicus Marine: Mediterranean physics model, top layer (same login) ----
+  # MY = reanalysis from 1987, anfc = analysis and forecast carrying it on to today.
+  cmems_med_cur_my:
+    label: Copernicus physics reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics reanalysis 4.2 km, daily surface currents
+    dataset_id: cmems_mod_med_phy-cur_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_PHY_006_004
+    variables: {uo: current_u, vo: current_v}
+    derive: currents                 # stores current speed and the direction the water flows towards
+    max_depth: 1.5
+    earliest: "1987-01-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_cur_anfc:
+    label: Copernicus physics analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics analysis and forecast 4.2 km, daily surface currents
+    dataset_id: cmems_mod_med_phy-cur_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_PHY_006_013
+    variables: {uo: current_u, vo: current_v}
+    derive: currents
+    max_depth: 1.5
+    earliest: "2023-11-01"
+    chunk_days: 180
+    lookback_days: 10
+
+  cmems_med_sal_my:
+    label: Copernicus physics reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics reanalysis 4.2 km, daily surface salinity
+    dataset_id: cmems_mod_med_phy-sal_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_PHY_006_004
+    variables: {so: salinity}
+    max_depth: 1.5
+    earliest: "1987-01-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_sal_anfc:
+    label: Copernicus physics analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics analysis and forecast 4.2 km, daily surface salinity
+    dataset_id: cmems_mod_med_phy-sal_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_PHY_006_013
+    variables: {so: salinity}
+    max_depth: 1.5
+    earliest: "2023-11-01"
+    chunk_days: 180
+    lookback_days: 10
+
+  cmems_med_mld_my:
+    label: Copernicus physics reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics reanalysis 4.2 km, daily mixed layer depth
+    dataset_id: cmems_mod_med_phy-mld_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_PHY_006_004
+    variables: {mlotst: mld}
+    earliest: "1987-01-01"
+    chunk_days: 730
+    lookback_days: 10
+
+  cmems_med_mld_anfc:
+    label: Copernicus physics analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics analysis and forecast 4.2 km, daily mixed layer depth
+    dataset_id: cmems_mod_med_phy-mld_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_PHY_006_013
+    variables: {mlotst: mld}
+    earliest: "2023-11-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  # ---- Copernicus Marine: Mediterranean biogeochemistry model, top layer (same login) ----
+  cmems_med_nut_my:
+    label: Copernicus biogeochemistry reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry reanalysis 4.2 km, daily surface nutrients
+    dataset_id: cmems_mod_med_bgc-nut_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_BGC_006_008
+    variables: &nut_vars {no3: nitrate, po4: phosphate, nh4: ammonium}
+    max_depth: 1.5
+    earliest: "1999-01-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_nut_anfc:
+    label: Copernicus biogeochemistry analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry analysis and forecast 4.2 km, daily surface nutrients
+    dataset_id: cmems_mod_med_bgc-nut_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_BGC_006_014
+    variables: *nut_vars
+    max_depth: 1.5
+    earliest: "2023-10-01"
+    chunk_days: 180
+    lookback_days: 10
+
+  cmems_med_bio_my:
+    label: Copernicus biogeochemistry reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry reanalysis 4.2 km, daily surface oxygen and net primary production
+    dataset_id: cmems_mod_med_bgc-bio_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_BGC_006_008
+    variables: &bio_vars {o2: oxygen, nppv: npp_model}
+    max_depth: 1.5
+    earliest: "1999-01-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_bio_anfc:
+    label: Copernicus biogeochemistry analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry analysis and forecast 4.2 km, daily surface oxygen and net primary production
+    dataset_id: cmems_mod_med_bgc-bio_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_BGC_006_014
+    variables: *bio_vars
+    max_depth: 1.5
+    earliest: "2023-10-01"
+    chunk_days: 180
+    lookback_days: 10
+
+  cmems_med_car_my:
+    label: Copernicus biogeochemistry reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry reanalysis 4.2 km, daily surface pH, dissolved inorganic carbon and alkalinity
+    dataset_id: cmems_mod_med_bgc-car_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_BGC_006_008
+    variables: &car_vars
+      ph: ph
+      dissic: {code: dic, scale: 1000}          # mol m-3 -> mmol m-3
+      talk: {code: alkalinity, scale: 1000}     # mol m-3 -> mmol m-3
+    max_depth: 1.5
+    earliest: "1999-01-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_car_anfc:
+    label: Copernicus biogeochemistry analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry analysis and forecast 4.2 km, daily surface pH, dissolved inorganic carbon and alkalinity
+    dataset_id: cmems_mod_med_bgc-car_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_BGC_006_014
+    variables: *car_vars
+    max_depth: 1.5
+    earliest: "2023-10-01"
+    chunk_days: 180
+    lookback_days: 10
+
+  cmems_med_co2_my:
+    label: Copernicus biogeochemistry reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry reanalysis 4.2 km, daily surface partial pressure of CO2
+    dataset_id: cmems_mod_med_bgc-co2_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_BGC_006_008
+    variables: &co2_vars
+      spco2: {code: pco2, scale: 9.86923}       # Pa -> micro-atmospheres
+    earliest: "1999-01-01"
+    chunk_days: 730
+    lookback_days: 10
+
+  cmems_med_co2_anfc:
+    label: Copernicus biogeochemistry analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry analysis and forecast 4.2 km, daily surface partial pressure of CO2
+    dataset_id: cmems_mod_med_bgc-co2_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_BGC_006_014
+    variables: *co2_vars
+    earliest: "2023-10-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_phyto_my:
+    label: Copernicus biogeochemistry reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry reanalysis 4.2 km, daily surface phytoplankton carbon
+    dataset_id: cmems_mod_med_bgc-plankton_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_BGC_006_008
+    variables: {phyc: phyto_carbon}
+    max_depth: 1.5
+    earliest: "1999-01-01"
+    chunk_days: 365
+    lookback_days: 10
+
+  cmems_med_phyto_anfc:
+    label: Copernicus biogeochemistry analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean biogeochemistry analysis and forecast 4.2 km, daily surface phytoplankton and zooplankton carbon
+    dataset_id: cmems_mod_med_bgc-pft_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_BGC_006_014
+    variables: {phyc: phyto_carbon, zooc: zoo_carbon}
+    max_depth: 1.5
+    earliest: "2023-10-01"
+    chunk_days: 180
+    lookback_days: 10
+
   # ---------------- NASA Ocean Biology DAAC (free Earthdata login) ----------------
   nasa_par_seawifs:
     label: NASA SeaWiFS
@@ -254,36 +592,67 @@ sources:
     lookback_days: 10
 
 # Variables the dashboard knows about
+# group: physical, chemical or biological (how the dashboard sorts them)
+# valid_range: values outside it are treated as bad pixels and ignored.
+# daily_statistic: which area statistic the dashboard uses (median resists stray coastal pixels).
 variables:
-  # valid_range: values outside it are treated as bad pixels and ignored.
-  # daily_statistic: which area statistic the dashboard uses (median resists stray coastal pixels).
-  chl:          {name: Chlorophyll-a, unit: mg m-3, valid_range: [0.01, 100], daily_statistic: median}
-  kd490:        {name: Diffuse attenuation at 490 nm, unit: m-1, valid_range: [0.01, 6], daily_statistic: median}
-  sst:          {name: Sea surface temperature (foundation), unit: degC, valid_range: [5, 35]}
-  par:          {name: Photosynthetically available radiation, unit: einstein m-2 day-1, valid_range: [0, 130]}
-  wave_hs:      {name: Significant wave height, unit: m, valid_range: [0, 20]}
-  wave_dir:     {name: Mean wave direction (from), unit: deg}
-  wave_tm10:    {name: Mean wave period Tm-10, unit: s, valid_range: [0, 30]}
-  wave_tp:      {name: Peak wave period, unit: s, valid_range: [0, 30]}
-  wind_speed:   {name: Wind speed at 10 m, unit: m s-1, valid_range: [0, 75]}
-  wind_dir:     {name: Wind direction (from), unit: deg}
-  wind_gust:    {name: Wind gust, unit: m s-1}
-  precip:       {name: Precipitation, unit: mm}
-  precip_1h:    {name: Precipitation (station, 1 h), unit: mm}
-  precip_3h:    {name: Precipitation (station, 3 h), unit: mm}
-  precip_6h:    {name: Precipitation (station, 6 h), unit: mm}
-  precip_12h:   {name: Precipitation (station, 12 h), unit: mm}
-  precip_24h:   {name: Precipitation (station, 24 h), unit: mm}
-  slp:          {name: Sea level pressure, unit: hPa}
-  air_temp:     {name: Air temperature, unit: degC}
-  sw_rad:       {name: Incoming shortwave radiation (ERA5), unit: W m-2}
-  par_era5:     {name: PAR estimated from ERA5 shortwave radiation, unit: einstein m-2 day-1}
-  dust_sfc:     {name: Surface dust concentration (CAMS), unit: ug m-3, valid_range: [0, 20000]}
-  aod_550:      {name: Aerosol optical depth 550 nm, unit: "1"}
-  dust_aod_550: {name: Dust aerosol optical depth 550 nm, unit: "1"}
-  pm10_model:   {name: PM10 (CAMS model), unit: ug m-3}
-  aeronet_aod_500: {name: AERONET aerosol optical depth 500 nm, unit: "1"}
-  aeronet_ae_440_870: {name: AERONET Angstrom exponent 440-870 nm, unit: "1"}
+  # ---- physical ----
+  sst:          {group: physical, name: Sea surface temperature (foundation), unit: degC, valid_range: [5, 35]}
+  par:          {group: physical, name: Photosynthetically available radiation, unit: einstein m-2 day-1, valid_range: [0, 130]}
+  kd490:        {group: physical, name: Diffuse attenuation at 490 nm, unit: m-1, valid_range: [0.01, 6], daily_statistic: median}
+  current_speed: {group: physical, name: Surface current speed (model), unit: m s-1, valid_range: [0, 5]}
+  current_dir:  {group: physical, name: Surface current direction (towards), unit: deg}
+  salinity:     {group: physical, name: Sea surface salinity (model), unit: PSU, valid_range: [30, 40]}
+  mld:          {group: physical, name: Mixed layer depth (model), unit: m, valid_range: [0, 1000]}
+  wave_hs:      {group: physical, name: Significant wave height, unit: m, valid_range: [0, 20]}
+  wave_dir:     {group: physical, name: Mean wave direction (from), unit: deg}
+  wave_tm10:    {group: physical, name: Mean wave period Tm-10, unit: s, valid_range: [0, 30]}
+  wave_tp:      {group: physical, name: Peak wave period, unit: s, valid_range: [0, 30]}
+  wind_speed:   {group: physical, name: Wind speed at 10 m, unit: m s-1, valid_range: [0, 75]}
+  wind_dir:     {group: physical, name: Wind direction (from), unit: deg}
+  wind_gust:    {group: physical, name: Wind gust, unit: m s-1}
+  precip:       {group: physical, name: Precipitation, unit: mm}
+  precip_1h:    {group: physical, name: Precipitation (station, 1 h), unit: mm}
+  precip_3h:    {group: physical, name: Precipitation (station, 3 h), unit: mm}
+  precip_6h:    {group: physical, name: Precipitation (station, 6 h), unit: mm}
+  precip_12h:   {group: physical, name: Precipitation (station, 12 h), unit: mm}
+  precip_24h:   {group: physical, name: Precipitation (station, 24 h), unit: mm}
+  slp:          {group: physical, name: Sea level pressure, unit: hPa}
+  air_temp:     {group: physical, name: Air temperature, unit: degC}
+  sw_rad:       {group: physical, name: Incoming shortwave radiation (ERA5), unit: W m-2}
+  par_era5:     {group: physical, name: PAR estimated from ERA5 shortwave radiation, unit: einstein m-2 day-1}
+  bbp443:       {group: physical, name: Particle backscattering at 443 nm, unit: m-1, valid_range: [0, 1], daily_statistic: median}
+  # ---- chemical ----
+  dust_sfc:     {group: chemical, name: Surface dust concentration (CAMS), unit: ug m-3, valid_range: [0, 20000]}
+  aod_550:      {group: chemical, name: Aerosol optical depth 550 nm, unit: "1"}
+  dust_aod_550: {group: chemical, name: Dust aerosol optical depth 550 nm, unit: "1"}
+  pm10_model:   {group: chemical, name: PM10 (CAMS model), unit: ug m-3}
+  aeronet_aod_500: {group: chemical, name: AERONET aerosol optical depth 500 nm, unit: "1"}
+  aeronet_ae_440_870: {group: chemical, name: AERONET Angstrom exponent 440-870 nm, unit: "1"}
+  nitrate:      {group: chemical, name: Nitrate (model), unit: mmol m-3, valid_range: [0, 50]}
+  phosphate:    {group: chemical, name: Phosphate (model), unit: mmol m-3, valid_range: [0, 5]}
+  ammonium:     {group: chemical, name: Ammonium (model), unit: mmol m-3, valid_range: [0, 20]}
+  oxygen:       {group: chemical, name: Dissolved oxygen (model), unit: mmol m-3, valid_range: [100, 450]}
+  ph:           {group: chemical, name: pH (model), unit: "1", valid_range: [7.5, 8.6]}
+  dic:          {group: chemical, name: Dissolved inorganic carbon (model), unit: mmol m-3, valid_range: [1500, 3000]}
+  alkalinity:   {group: chemical, name: Total alkalinity (model), unit: mmol m-3, valid_range: [1800, 3000]}
+  pco2:         {group: chemical, name: Surface partial pressure of CO2 (model), unit: uatm, valid_range: [100, 1000]}
+  cdom_adg443:  {group: chemical, name: Absorption by dissolved organic matter and detritus at 443 nm, unit: m-1, valid_range: [0, 5], daily_statistic: median}
+  # ---- biological ----
+  chl:          {group: biological, name: Chlorophyll-a, unit: mg m-3, valid_range: [0.01, 100], daily_statistic: median}
+  diatoms:      {group: biological, name: Diatoms (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  dinoflagellates: {group: biological, name: Dinoflagellates (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  haptophytes:  {group: biological, name: Haptophytes (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  cryptophytes: {group: biological, name: Cryptophytes (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  green_algae:  {group: biological, name: Green algae and prochlorophytes (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  prokaryotes:  {group: biological, name: Prokaryotes (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  micro_phyto:  {group: biological, name: Microphytoplankton (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  nano_phyto:   {group: biological, name: Nanophytoplankton (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  pico_phyto:   {group: biological, name: Picophytoplankton (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  pp_sat:       {group: biological, name: Primary production, water column (satellite), unit: g C m-2 day-1, valid_range: [0, 20], daily_statistic: median}
+  npp_model:    {group: biological, name: Net primary production at the surface (model), unit: mg C m-3 day-1, valid_range: [0, 500]}
+  phyto_carbon: {group: biological, name: Phytoplankton carbon (model), unit: mmol C m-3, valid_range: [0, 50]}
+  zoo_carbon:   {group: biological, name: Zooplankton carbon (model), unit: mmol C m-3, valid_range: [0, 50]}
 
 # Order of preference when the dashboard export merges overlapping sources
 export:
@@ -300,9 +669,16 @@ export:
       - {variable: chl, location: gibraltar_20km}
       - {variable: kd490, location: gibraltar_20km}
       - {variable: par, location: gibraltar_20km}
+  # Marine heatwaves (Hobday et al. 2016): SST above the seasonal 90th percentile for 5+ days.
+  marine_heatwaves:
+    variable: sst
+    locations: [gibraltar_20km, bay_of_gibraltar, gibraltar_eastside, strait_of_gibraltar, western_alboran]
+    baseline: [1991, 2020]         # 30-year reference period (uses all years if the record is shorter)
+    min_days: 5
+    max_gap_days: 2
   daily_priority:
-    chl: [cmems_med_chl_my, cmems_med_chl_nrt]
-    kd490: [cmems_med_kd490_my, cmems_med_kd490_nrt]
+    chl: [cmems_med_chl_my, cmems_med_chl_nrt, cmems_med_chl_olci_my, cmems_med_chl_olci_nrt]
+    kd490: [cmems_med_kd490_my, cmems_med_kd490_nrt, cmems_med_kd490_olci_my, cmems_med_kd490_olci_nrt]
     sst: [cmems_med_sst_rep, cmems_med_sst_nrt]
     par: [nasa_par_pace_nrt, nasa_par_modisa, nasa_par_seawifs]
     wave_hs: [cmems_med_waves_my, cmems_med_waves_anfc]
@@ -319,3 +695,29 @@ export:
     aod_550: [openmeteo_cams_dust, cams_eac4_dust]
     aeronet_aod_500: [aeronet]
     aeronet_ae_440_870: [aeronet]
+    diatoms: [cmems_med_pft_my, cmems_med_pft_nrt]
+    dinoflagellates: [cmems_med_pft_my, cmems_med_pft_nrt]
+    haptophytes: [cmems_med_pft_my, cmems_med_pft_nrt]
+    cryptophytes: [cmems_med_pft_my, cmems_med_pft_nrt]
+    green_algae: [cmems_med_pft_my, cmems_med_pft_nrt]
+    prokaryotes: [cmems_med_pft_my, cmems_med_pft_nrt]
+    micro_phyto: [cmems_med_pft_my, cmems_med_pft_nrt]
+    nano_phyto: [cmems_med_pft_my, cmems_med_pft_nrt]
+    pico_phyto: [cmems_med_pft_my, cmems_med_pft_nrt]
+    cdom_adg443: [cmems_med_optics_my, cmems_med_optics_nrt]
+    bbp443: [cmems_med_optics_my, cmems_med_optics_nrt]
+    pp_sat: [cmems_med_pp_my, cmems_med_pp_nrt]
+    current_speed: [cmems_med_cur_my, cmems_med_cur_anfc]
+    current_dir: [cmems_med_cur_my, cmems_med_cur_anfc]
+    salinity: [cmems_med_sal_my, cmems_med_sal_anfc]
+    mld: [cmems_med_mld_my, cmems_med_mld_anfc]
+    nitrate: [cmems_med_nut_my, cmems_med_nut_anfc]
+    phosphate: [cmems_med_nut_my, cmems_med_nut_anfc]
+    ammonium: [cmems_med_nut_my, cmems_med_nut_anfc]
+    oxygen: [cmems_med_bio_my, cmems_med_bio_anfc]
+    npp_model: [cmems_med_bio_my, cmems_med_bio_anfc]
+    ph: [cmems_med_car_my, cmems_med_car_anfc]
+    dic: [cmems_med_car_my, cmems_med_car_anfc]
+    alkalinity: [cmems_med_car_my, cmems_med_car_anfc]
+    pco2: [cmems_med_co2_my, cmems_med_co2_anfc]
+    phyto_carbon: [cmems_med_phyto_my, cmems_med_phyto_anfc]
