@@ -293,15 +293,39 @@ class Database:
             )
             return cur.fetchall()
 
-    def fetch_series(self, variable: str, location: str, source: str):
+    def fetch_series(self, variable: str, location: str, source: str, statistic: str = "mean"):
+        col = "COALESCE(val_median, val_mean)" if statistic == "median" else "val_mean"
         with self.cursor() as cur:
             cur.execute(
-                f"SELECT obs_time, val_mean FROM observations WHERE variable={self.ph} AND location={self.ph} "
-                f"AND source={self.ph} AND val_mean IS NOT NULL ORDER BY obs_time",
+                f"SELECT obs_time, {col} FROM observations WHERE variable={self.ph} AND location={self.ph} "
+                f"AND source={self.ph} AND {col} IS NOT NULL ORDER BY obs_time",
                 (variable, location, source),
             )
             rows = cur.fetchall()
         return [(datetime.fromisoformat(t) if isinstance(t, str) else t, v) for t, v in rows]
+
+    def clean_out_of_range(self, variables: dict) -> int:
+        """Blank statistics that fall outside each variable's valid_range.
+
+        Rows harvested before range checks existed can have a mean or maximum ruined by one bad pixel;
+        their median is usually still sound, so each statistic is checked on its own.
+        """
+        changed = 0
+        with self.cursor() as cur:
+            for code, meta in variables.items():
+                rng = meta.get("valid_range")
+                if not rng:
+                    continue
+                lo, hi = float(rng[0]), float(rng[1])
+                for col in ("val_mean", "val_median", "val_min", "val_max"):
+                    extra = ", val_std = NULL" if col in ("val_mean", "val_max", "val_min") else ""
+                    cur.execute(
+                        f"UPDATE observations SET {col} = NULL{extra} WHERE variable = {self.ph} "
+                        f"AND {col} IS NOT NULL AND ({col} < {self.ph} OR {col} > {self.ph})",
+                        (code, lo, hi),
+                    )
+                    changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        return changed
 
     def series_keys(self):
         with self.cursor() as cur:
