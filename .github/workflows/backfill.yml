@@ -15,6 +15,10 @@ on:
         description: "Stop starting new chunks after this many minutes"
         required: false
         default: "300"
+      restore_key:
+        description: "Only for recovery: exact cache key of a database to start from (blank = newest)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -50,10 +54,11 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/tnp_ocean.db
-          key: tnp-db-${{ github.run_id }}
+          key: ${{ github.event.inputs.restore_key || format('tnp-db-{0}', github.run_id) }}
           restore-keys: tnp-db-
 
       - name: Backfill
+        id: backfill
         env:
           IN_SOURCE: ${{ github.event.inputs.source }}
           IN_START: ${{ github.event.inputs.start }}
@@ -65,12 +70,20 @@ jobs:
           python harvest.py backfill $ARGS
 
       - name: Status
-        if: always()
+        if: always() && steps.backfill.outcome != 'skipped'
         run: python harvest.py status
 
       - name: Save SQLite database
-        if: always() && env.DATABASE_URL == ''
+        if: always() && env.DATABASE_URL == '' && steps.backfill.outcome != 'skipped' && hashFiles('data/tnp_ocean.db') != ''
         uses: actions/cache/save@v4
         with:
           path: data/tnp_ocean.db
           key: tnp-db-${{ github.run_id }}
+
+      - name: Keep a backup copy of the database (30 days)
+        if: always() && env.DATABASE_URL == '' && steps.backfill.outcome != 'skipped' && hashFiles('data/tnp_ocean.db') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnp-db-backup
+          path: data/tnp_ocean.db
+          retention-days: 30
