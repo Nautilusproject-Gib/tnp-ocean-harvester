@@ -205,9 +205,14 @@ def export(config: dict, db: Database, log=print):
     (out_dir / "daily").mkdir(parents=True, exist_ok=True)
     priorities = ecfg.get("daily_priority", {})
 
+    n_clean = db.clean_out_of_range(config.get("variables", {}))
+    if n_clean:
+        log(f"Blanked {n_clean} out-of-range statistics before export")
+
     grouped = defaultdict(dict)  # (variable, location) -> {source: daily series}
     for source, variable, location in db.series_keys():
-        series = db.fetch_series(variable, location, source)
+        stat = config.get("variables", {}).get(variable, {}).get("daily_statistic", "mean")
+        series = db.fetch_series(variable, location, source, statistic=stat)
         s = daily_aggregate(series, variable)
         if s.empty:
             continue
@@ -237,6 +242,7 @@ def export(config: dict, db: Database, log=print):
             "location": location,
             "unit": config["variables"].get(variable, {}).get("unit"),
             "name": config["variables"].get(variable, {}).get("name", variable),
+            "statistic": config["variables"].get(variable, {}).get("daily_statistic", "mean"),
             "sources": srcs,
             "record": rec,
             "climatology": clim,
