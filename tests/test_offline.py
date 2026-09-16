@@ -267,6 +267,24 @@ class TestDatabaseAndExport(unittest.TestCase):
         self.assertLess(payload["record"]["max"], 1)
         self.assertEqual(payload["statistic"], "median")
 
+    def test_source_options(self):
+        obs = []
+        for i in range(10):
+            t = datetime(2024, 1, 1, 12) + timedelta(days=i)
+            obs.append(Observation("openmeteo_era5", "wind_speed", "gibraltar_airport", t, 5.0, n_valid=1, n_total=1))
+            if i < 5:
+                obs.append(Observation("ncei_isd_lxgb", "wind_speed", "gibraltar_airport", t, 3.0, n_valid=1, n_total=1))
+        self.db.upsert_observations(obs)
+        cfg = {**CONFIG, "export": {**CONFIG["export"], "output_dir": f"{self.tmp.name}/pub5"}}
+        export(cfg, self.db, log=lambda *a: None)
+        d = Path(f"{self.tmp.name}/pub5/daily")
+        combined = json.loads((d / "wind_speed__gibraltar_airport.json").read_text())
+        self.assertEqual([o["source"] for o in combined["source_options"]], ["openmeteo_era5", "ncei_isd_lxgb"])
+        self.assertEqual({r[1] for r in combined["data"]}, {5.0})              # ERA5 preferred for wind
+        station = json.loads((d / "wind_speed__gibraltar_airport__ncei_isd_lxgb.json").read_text())
+        self.assertEqual(len(station["data"]), 5)
+        self.assertEqual(station["source_labels"], ["Gibraltar Airport station (NOAA)"])
+
     def test_daily_aggregation(self):
         base = datetime(2024, 1, 1)
         hourly = [(base + timedelta(hours=h), 1.0) for h in range(24)]
