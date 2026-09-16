@@ -47,6 +47,7 @@ sources:
 
   # ---------------- Copernicus Marine (free account needed) ----------------
   cmems_med_chl_my:
+    label: Copernicus reprocessed (MY)
     enabled: true
     type: copernicus_grid
     description: Mediterranean ocean colour L3 multi-sensor 1 km, multi-year (reprocessed)
@@ -58,6 +59,7 @@ sources:
     lookback_days: 10
 
   cmems_med_chl_nrt:
+    label: Copernicus near real time
     enabled: true
     type: copernicus_grid
     description: Mediterranean ocean colour L3 multi-sensor 1 km, near real time
@@ -68,6 +70,7 @@ sources:
     lookback_days: 7
 
   cmems_med_kd490_my:
+    label: Copernicus reprocessed (MY)
     enabled: true
     type: copernicus_grid
     description: Mediterranean transparency (KD490) L3 multi-sensor 1 km, multi-year
@@ -79,6 +82,7 @@ sources:
     lookback_days: 10
 
   cmems_med_kd490_nrt:
+    label: Copernicus near real time
     enabled: true
     type: copernicus_grid
     description: Mediterranean transparency (KD490) L3 multi-sensor 1 km, near real time
@@ -89,6 +93,7 @@ sources:
     lookback_days: 7
 
   cmems_med_sst_rep:
+    label: Copernicus reprocessed
     enabled: true
     type: copernicus_grid
     description: Mediterranean L4 foundation SST 0.05 deg, reprocessed
@@ -101,6 +106,7 @@ sources:
     lookback_days: 10
 
   cmems_med_sst_nrt:
+    label: Copernicus near real time
     enabled: true
     type: copernicus_grid
     description: Mediterranean L4 foundation SST 1/100 deg, near real time
@@ -113,6 +119,7 @@ sources:
     lookback_days: 5
 
   cmems_med_waves_my:
+    label: Copernicus wave reanalysis
     enabled: true
     type: copernicus_point
     description: Mediterranean wave reanalysis 4.2 km, hourly
@@ -125,6 +132,7 @@ sources:
     lookback_days: 10
 
   cmems_med_waves_anfc:
+    label: Copernicus wave forecast
     enabled: true
     type: copernicus_point
     description: Mediterranean wave analysis and forecast 4.2 km, hourly
@@ -139,6 +147,7 @@ sources:
 
   # ---------------- NASA Ocean Biology DAAC (free Earthdata login) ----------------
   nasa_par_seawifs:
+    label: NASA SeaWiFS
     enabled: true
     type: nasa_l3m
     description: SeaWiFS L3 mapped daily PAR 9 km
@@ -151,6 +160,7 @@ sources:
     lookback_days: 0
 
   nasa_par_modisa:
+    label: NASA MODIS-Aqua
     enabled: true
     type: nasa_l3m
     description: MODIS-Aqua L3 mapped daily PAR 4 km
@@ -163,6 +173,7 @@ sources:
     lookback_days: 10
 
   nasa_par_pace_nrt:
+    label: NASA PACE
     enabled: true
     type: nasa_l3m
     description: PACE OCI L3 mapped daily PAR 4 km, near real time
@@ -175,6 +186,7 @@ sources:
 
   # ---------------- Weather station: Gibraltar Airport (no account) ----------------
   ncei_isd_lxgb:
+    label: Gibraltar Airport station (NOAA)
     enabled: true
     type: ncei_isd
     description: NOAA NCEI Integrated Surface Database, Gibraltar (LXGB) hourly reports
@@ -185,6 +197,7 @@ sources:
 
   # ---------------- Open-Meteo (no account, non-commercial use) ----------------
   openmeteo_era5:
+    label: ERA5 reanalysis
     enabled: true
     type: openmeteo_archive
     description: ERA5 reanalysis via Open-Meteo, hourly wind, rain, air temperature, solar radiation
@@ -202,6 +215,7 @@ sources:
     lookback_days: 10
 
   openmeteo_cams_dust:
+    label: CAMS forecast
     enabled: true
     type: openmeteo_airquality
     description: CAMS atmospheric composition via Open-Meteo, hourly dust and aerosols
@@ -216,6 +230,7 @@ sources:
 
   # ---------------- CAMS reanalysis (free ADS account) ----------------
   cams_eac4_dust:
+    label: CAMS reanalysis (EAC4)
     enabled: true
     type: cams_eac4
     description: CAMS global reanalysis EAC4, 3-hourly dust and total AOD at 550 nm
@@ -230,6 +245,7 @@ sources:
 
   # ---------------- AERONET sun photometers (no account) ----------------
   aeronet:
+    label: AERONET Málaga
     enabled: true
     type: aeronet
     description: NASA AERONET v3 Level 1.5 daily averages
@@ -292,10 +308,12 @@ export:
     wave_hs: [cmems_med_waves_my, cmems_med_waves_anfc]
     wave_tm10: [cmems_med_waves_my, cmems_med_waves_anfc]
     wave_tp: [cmems_med_waves_my, cmems_med_waves_anfc]
-    wind_speed: [ncei_isd_lxgb, openmeteo_era5]
-    wind_gust: [ncei_isd_lxgb, openmeteo_era5]
+    # ERA5 first for weather so the combined series is one consistent product;
+    # the airport station can still be chosen on the dashboard.
+    wind_speed: [openmeteo_era5, ncei_isd_lxgb]
+    wind_gust: [openmeteo_era5, ncei_isd_lxgb]
     precip: [openmeteo_era5]
-    air_temp: [ncei_isd_lxgb, openmeteo_era5]
+    air_temp: [openmeteo_era5, ncei_isd_lxgb]
     dust_sfc: [openmeteo_cams_dust]
     dust_aod_550: [cams_eac4_dust]
     aod_550: [openmeteo_cams_dust, cams_eac4_dust]
