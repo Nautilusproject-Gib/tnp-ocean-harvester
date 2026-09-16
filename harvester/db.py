@@ -308,5 +308,15 @@ class Database:
             cur.execute("SELECT DISTINCT source, variable, location FROM observations")
             return cur.fetchall()
 
+    def row_count(self) -> int:
+        with self.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM observations")
+            return int(cur.fetchone()[0])
+
     def close(self):
+        if self.dialect == "sqlite":
+            try:
+                self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                pass
         self.conn.close()
