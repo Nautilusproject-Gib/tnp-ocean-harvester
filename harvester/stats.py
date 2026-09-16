@@ -55,3 +55,22 @@ def circular_mean_deg(values) -> float | None:
     r = np.radians(a)
     ang = np.degrees(np.arctan2(np.sin(r).mean(), np.cos(r).mean()))
     return float(ang % 360.0)
+
+
+def mask_valid(values, valid_range=None, attrs=None):
+    """Set physically impossible values to NaN.
+
+    Uses the configured valid_range and, when present, the dataset's own valid_min/valid_max attributes.
+    """
+    a = np.array(values, dtype="float64", copy=True)
+    lo, hi = -np.inf, np.inf
+    if valid_range:
+        lo, hi = float(valid_range[0]), float(valid_range[1])
+    if attrs:
+        if attrs.get("valid_min") is not None:
+            lo = max(lo, float(np.asarray(attrs["valid_min"]).ravel()[0]))
+        if attrs.get("valid_max") is not None:
+            hi = min(hi, float(np.asarray(attrs["valid_max"]).ravel()[0]))
+    with np.errstate(invalid="ignore"):
+        a[(a < lo) | (a > hi)] = np.nan
+    return a
