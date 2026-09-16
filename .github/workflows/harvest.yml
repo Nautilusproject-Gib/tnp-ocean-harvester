@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "30 6 * * *"
   workflow_dispatch:
+    inputs:
+      restore_key:
+        description: "Only for recovery: exact cache key of a database to start from (blank = newest)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -26,6 +31,8 @@ jobs:
   harvest:
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    outputs:
+      published: ${{ steps.publish.outcome }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,36 +47,48 @@ jobs:
         run: python -m unittest discover -s tests
 
       - name: Restore SQLite database
+        id: restore
         if: env.DATABASE_URL == ''
         uses: actions/cache/restore@v4
         with:
           path: data/tnp_ocean.db
-          key: tnp-db-${{ github.run_id }}
+          key: ${{ github.event.inputs.restore_key || format('tnp-db-{0}', github.run_id) }}
           restore-keys: tnp-db-
 
       - name: Harvest new data
+        id: harvest
         run: python harvest.py update --max-minutes 240
 
       - name: Export dashboard JSON
-        if: always()
+        id: export
+        if: always() && steps.harvest.outcome != 'skipped'
         run: python harvest.py export && python harvest.py status
 
       - name: Save SQLite database
-        if: always() && env.DATABASE_URL == ''
+        if: always() && env.DATABASE_URL == '' && steps.harvest.outcome != 'skipped' && hashFiles('data/tnp_ocean.db') != ''
         uses: actions/cache/save@v4
         with:
           path: data/tnp_ocean.db
           key: tnp-db-${{ github.run_id }}
 
+      - name: Keep a backup copy of the database (30 days)
+        if: always() && env.DATABASE_URL == '' && steps.harvest.outcome != 'skipped' && hashFiles('data/tnp_ocean.db') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnp-db-backup
+          path: data/tnp_ocean.db
+          retention-days: 30
+
       - name: Publish dashboard data to GitHub Pages
-        if: always()
+        id: publish
+        if: always() && steps.export.outcome == 'success'
         uses: actions/upload-pages-artifact@v3
         with:
           path: public
 
   deploy:
     needs: harvest
-    if: always()
+    if: always() && needs.harvest.outputs.published == 'success'
     runs-on: ubuntu-latest
     environment: github-pages
     steps:
