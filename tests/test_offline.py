@@ -245,6 +245,28 @@ class TestDatabaseAndExport(unittest.TestCase):
         latest = json.loads(Path(f"{self.tmp.name}/pub3/latest.json").read_text())
         self.assertTrue(any(l["variable"] == "chl" for l in latest))
 
+    def test_bad_pixels_are_ignored(self):
+        from harvester.stats import mask_valid
+        a = mask_valid(np.array([[0.3, 2.9e22], [0.5, -5.0]]), [0.01, 100])
+        self.assertEqual(area_stats(a)["n_valid"], 2)
+        self.assertAlmostEqual(area_stats(a)["val_mean"], 0.4)
+        a = mask_valid(np.array([1.0, 50.0]), None, attrs={"valid_min": 0.0, "valid_max": 10.0})
+        self.assertTrue(np.isnan(a[1]))
+
+    def test_clean_and_median_export(self):
+        day = datetime(2004, 10, 1)
+        self.db.upsert_observations([
+            Observation("cmems_med_chl_my", "chl", "gibraltar_20km", day, 2.9e22, val_median=0.41,
+                        val_min=0.1, val_max=2.9e22, val_std=1e21, n_valid=40, n_total=60),
+            Observation("cmems_med_chl_my", "chl", "gibraltar_20km", day + timedelta(days=1), 0.5, val_median=0.45,
+                        val_min=0.2, val_max=1.1, val_std=0.2, n_valid=40, n_total=60)])
+        cfg = {**CONFIG, "export": {**CONFIG["export"], "output_dir": f"{self.tmp.name}/pub4"}}
+        export(cfg, self.db, log=lambda *a: None)
+        payload = json.loads(Path(f"{self.tmp.name}/pub4/daily/chl__gibraltar_20km.json").read_text())
+        self.assertEqual([d[1] for d in payload["data"]], [0.41, 0.45])     # medians, bad mean gone
+        self.assertLess(payload["record"]["max"], 1)
+        self.assertEqual(payload["statistic"], "median")
+
     def test_daily_aggregation(self):
         base = datetime(2024, 1, 1)
         hourly = [(base + timedelta(hours=h), 1.0) for h in range(24)]
