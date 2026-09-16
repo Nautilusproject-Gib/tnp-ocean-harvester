@@ -203,11 +203,47 @@ class TestDatabaseAndExport(unittest.TestCase):
         payload = json.loads(Path(f"{self.tmp.name}/public/daily/sst__bay_of_gibraltar.json").read_text())
         self.assertEqual(payload["unit"], "degC")
         self.assertIsNotNone(payload["climatology"])
-        self.assertEqual(len(payload["climatology"]["doy_mean_p10_p90"]), 365)
+        self.assertEqual(len(payload["climatology"]["mean"]), 365)
+        self.assertEqual(len(payload["climatology"]["sd"]), 365)
+        rec = payload["record"]
+        self.assertLessEqual(rec["min"], rec["mean"])
+        self.assertLessEqual(rec["mean"], rec["max"])
         dates = [d[0] for d in payload["data"]]
         self.assertEqual(len(dates), len(set(dates)))
         latest = json.loads(Path(f"{self.tmp.name}/public/latest.json").read_text())
         self.assertEqual(latest[0]["variable"], "sst")
+
+    def test_par_from_era5(self):
+        base = datetime(2024, 6, 21)
+        self.db.upsert_observations([Observation("openmeteo_era5", "sw_rad", "gibraltar_airport",
+                                                 base + timedelta(hours=h), 300.0, n_valid=1, n_total=1)
+                                     for h in range(24)])
+        cfg = {**CONFIG, "export": {"output_dir": f"{self.tmp.name}/pub2", "daily_priority": {}}}
+        export(cfg, self.db, log=lambda *a: None)
+        payload = json.loads(Path(f"{self.tmp.name}/pub2/daily/par_era5__gibraltar_airport.json").read_text())
+        self.assertAlmostEqual(payload["data"][0][1], 300 * 86400 * 0.48 * 4.57e-6, places=3)  # ~56.9
+        self.assertEqual(payload["unit"], "einstein m-2 day-1")
+
+    def test_dust_episodes(self):
+        obs = []
+        for i in range(30):
+            day = datetime(2025, 3, 1) + timedelta(days=i)
+            dust = 120.0 if 10 <= i <= 12 else 10.0          # one three-day episode
+            obs += [Observation("openmeteo_cams_dust", "dust_sfc", "gibraltar_airport", day + timedelta(hours=h),
+                                dust, n_valid=1, n_total=1) for h in range(24)]
+            chl = 0.3 if i < 13 else 0.6                       # chlorophyll doubles afterwards
+            obs.append(Observation("cmems_med_chl_my", "chl", "gibraltar_20km", day, chl, n_valid=50, n_total=60))
+        self.db.upsert_observations(obs)
+        cfg = {**CONFIG, "export": {**CONFIG["export"], "output_dir": f"{self.tmp.name}/pub3"}}
+        export(cfg, self.db, log=lambda *a: None)
+        ev = json.loads(Path(f"{self.tmp.name}/pub3/dust_events.json").read_text())
+        self.assertEqual(len(ev["episodes"]), 1)
+        ep = ev["episodes"][0]
+        self.assertEqual((ep["start"], ep["end"], ep["days"]), ("2025-03-11", "2025-03-13", 3))
+        chl = next(r for r in ep["response"] if r["variable"] == "chl")
+        self.assertAlmostEqual(chl["change_pct"], 100.0)
+        latest = json.loads(Path(f"{self.tmp.name}/pub3/latest.json").read_text())
+        self.assertTrue(any(l["variable"] == "chl" for l in latest))
 
     def test_daily_aggregation(self):
         base = datetime(2024, 1, 1)
