@@ -57,7 +57,7 @@ a{color:var(--data)}
 .card{background:var(--panel);border:1px solid var(--rule);padding:16px 16px 12px;display:grid;grid-template-rows:auto auto auto 1fr auto;gap:6px;text-align:left;color:inherit;width:100%}
 .card:hover{border-color:var(--band-edge)}
 .card[aria-current="true"]{border-color:var(--blue);box-shadow:inset 0 3px 0 var(--blue)}
-.card .label{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card .label{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 8px}
 .card .where{white-space:nowrap}
 .card .where{font-weight:400;letter-spacing:0;text-transform:none}
 .card .value{font-size:34px;font-weight:700;color:var(--ink);line-height:1.1}
@@ -181,6 +181,7 @@ details ul{padding-left:18px;margin:8px 0}
         </div>
         <label for="year-select" id="year-label">Year <select id="year-select"></select></label>
         <label for="var-select">Measurement <select id="var-select"></select></label>
+        <label for="source-select" id="source-label" hidden>Data source <select id="source-select"></select></label>
       </div>
       <div class="chart-title">
         <h3 id="chart-name">—</h3>
@@ -202,7 +203,7 @@ details ul{padding-left:18px;margin:8px 0}
   <section class="section" aria-labelledby="dust-h">
     <div class="section-head">
       <h2 id="dust-h">Saharan dust episodes</h2>
-      <p>Dust blown north from the Sahara can carry iron and other nutrients to the sea surface. For each episode we compare chlorophyll, water clarity and light in the week before with the week after, averaged over the 20&nbsp;km box around Gibraltar.</p>
+      <p>Dust blown north from the Sahara can carry iron and other nutrients to the sea surface. For each episode we compare chlorophyll, light attenuation (KD490) and light in the week before with the week after, averaged over the 20&nbsp;km box around Gibraltar.</p>
     </div>
     <div class="dust-summary" id="dust-summary"></div>
     <div class="table-wrap">
@@ -210,7 +211,7 @@ details ul{padding-left:18px;margin:8px 0}
         <caption class="note" style="caption-side:bottom;text-align:left;padding:10px 12px" id="dust-caption"></caption>
         <thead>
           <tr><th scope="col">Dates</th><th scope="col" class="n">Days</th><th scope="col" class="n">Peak dust</th>
-              <th scope="col" class="n">Chlorophyll after</th><th scope="col" class="n">Water clarity (Kd490) after</th><th scope="col" class="n">Light (PAR) after</th></tr>
+              <th scope="col" class="n">Chlorophyll after</th><th scope="col" class="n">Attenuation (KD490) after</th><th scope="col" class="n">Light (PAR) after</th></tr>
         </thead>
         <tbody id="dust-rows"></tbody>
       </table>
@@ -224,9 +225,9 @@ details ul{padding-left:18px;margin:8px 0}
       <summary>What each measurement means</summary>
       <div class="inner">
         <ul>
-          <li><strong>Sea surface temperature</strong>: the "foundation" temperature just below the surface, without daytime warming, from a gap-filled satellite analysis.</li>
+          <li><strong>Sea surface temperature (SST)</strong>: the "foundation" temperature just below the surface, without daytime warming, from a gap-filled satellite analysis.</li>
           <li><strong>Chlorophyll-a</strong>: the green pigment in phytoplankton, the microscopic plants at the base of the marine food web. Higher values mean more plankton.</li>
-          <li><strong>Water clarity (Kd490)</strong>: how quickly blue light fades with depth. Higher values mean murkier water. We also show roughly how deep 1% of surface blue light reaches (4.6 ÷ Kd490).</li>
+          <li><strong>Attenuation coefficient (KD490)</strong>: how quickly blue light (490&nbsp;nm) fades with depth, in m⁻¹. Higher values mean murkier water. We also show roughly how deep 1% of surface blue light reaches (4.6 ÷ KD490).</li>
           <li><strong>Light (PAR)</strong>: photosynthetically available radiation, the sunlight plankton and seagrass can use, as moles of photons per square metre per day.</li>
           <li><strong>Waves</strong>: significant wave height off Europa Point, roughly the average height of the highest third of waves.</li>
           <li><strong>Wind</strong>: 10&nbsp;m wind at the airport. Easterly winds are the Levanter, westerlies the Poniente.</li>
@@ -239,7 +240,8 @@ details ul{padding-left:18px;margin:8px 0}
       <div class="inner">
         <p>For every day of the year we gather all values within 7 days either side, across every year in the record. From those we calculate the average, the standard deviation, and the lowest and highest values. A 15-day window smooths out gaps where cloud hides the sea from the satellites.</p>
         <p>"About normal" means within half a standard deviation of the average. "Slightly" is up to one standard deviation away, "much" is more than two.</p>
-        <p>Where a reprocessed dataset and a near-real-time one overlap, we use the reprocessed values. Chlorophyll is naturally skewed, so its lower band edge is held at zero.</p>
+        <p>"Combined" uses the best available source for each day: reprocessed satellite data before near-real-time data, and ERA5 before the airport station for weather. Where a measurement has more than one source, the <em>Data source</em> menu shows one source on its own, with its own average and limits.</p>
+        <p>For chlorophyll and KD490 each day's value is the median of the cloud-free pixels in the area, so a few bad coastal pixels can't skew it. Values outside a physically possible range are discarded. Chlorophyll is naturally skewed, so its lower band edge is held at zero.</p>
       </div>
     </details>
     <details>
@@ -266,9 +268,9 @@ const AREAS = [
 ];
 // cards: variable, where it lives, how to talk about it
 const VARS = [
-  {v:"sst", title:"Sea temperature", loc:"area", unit:"°C", dp:1, up:"Warmer", down:"Cooler"},
+  {v:"sst", title:"Sea Surface Temperature", short:"SST", loc:"area", unit:"°C", dp:1, up:"Warmer", down:"Cooler"},
   {v:"chl", title:"Chlorophyll", loc:"area", unit:"mg/m³", dp:2, up:"More plankton", down:"Less plankton", floor0:true},
-  {v:"kd490", title:"Water clarity", loc:"area", unit:"Kd490 m⁻¹", dp:3, up:"Murkier", down:"Clearer", floor0:true},
+  {v:"kd490", title:"Attenuation Coefficient (KD490)", short:"KD490", loc:"area", unit:"m⁻¹", dp:3, up:"Murkier", down:"Clearer", floor0:true},
   {v:"par", title:"Light (PAR)", loc:"area", unit:"mol/m²/day", dp:0, up:"Brighter", down:"Duller", floor0:true},
   {v:"wave_hs", title:"Waves", loc:"europa_point", where:"Europa Point", unit:"m", dp:1, up:"Rougher", down:"Calmer", floor0:true},
   {v:"wind_speed", title:"Wind", loc:"gibraltar_airport", where:"Airport", unit:"m/s", dp:1, up:"Windier", down:"Calmer", floor0:true},
@@ -295,7 +297,25 @@ const store = {
   set(k, v){ try { localStorage.setItem("tnp-obs-"+k, v); } catch(e){} }
 };
 
-const state = { area: store.get("area","gibraltar_20km"), variable: store.get("variable","sst"), mode:"season", year:null };
+const state = { area: store.get("area","gibraltar_20km"), variable: store.get("variable","sst"), mode:"season", year:null,
+  src: (() => { try { return JSON.parse(store.get("sources","{}")) || {}; } catch(e){ return {}; } })() };
+
+// The combined file lists any single-source alternatives; load the one chosen for this variable.
+async function getSeries(cfg, loc){
+  const combined = await getJSON(`daily/${cfg.v}__${loc}.json`);
+  const want = state.src[cfg.v];
+  const opt = want && (combined.source_options || []).find(o => o.source === want);
+  if (!opt) return {series: combined, combined, choice: null};
+  try { return {series: await getJSON("daily/" + opt.file), combined, choice: opt}; }
+  catch(e){ return {series: combined, combined, choice: null}; }
+}
+function cardFromSeries(series){
+  const rows = series.data; if (!rows.length) return null;
+  const last = rows[rows.length-1], c = series.climatology;
+  const i = doyOf(last[0]) - 1;
+  const mean = c && c.mean[i] != null ? c.mean[i] : null, sd = c && c.sd[i] != null ? c.sd[i] : null;
+  return {date:last[0], value:last[1], clim_mean:mean, clim_sd:sd, z: mean != null && sd ? (last[1]-mean)/sd : null};
+}
 let meta = null, latest = [], dust = null;
 
 function locFor(cfg){ return cfg.loc === "area" ? state.area : cfg.loc; }
@@ -337,7 +357,9 @@ async function renderCards(){
   const box = $("cards");
   const html = await Promise.all(VARS.map(async cfg => {
     const loc = locFor(cfg);
-    const l = latestFor(cfg.v, loc);
+    let got = null;
+    try { got = await getSeries(cfg, loc); } catch(e){}
+    const l = got ? cardFromSeries(got.series) : null;
     const where = whereFor(cfg, true);
     if (!l) return `<button type="button" class="card empty" data-var="${cfg.v}" aria-current="${state.variable===cfg.v}">
       <div class="label"><span>${cfg.title}</span><span class="where">${esc(where)}</span></div>
@@ -347,15 +369,15 @@ async function renderCards(){
     if (l.clim_mean != null) context = `Normal for ${fmtShort(l.date)}: ${fmt(l.clim_mean, cfg.dp)} ± ${fmt(l.clim_sd, cfg.dp)}`;
     if (cfg.v === "kd490" && l.value > 0) context += `<br>1% of blue light reaches about ${fmt(4.6 / l.value, 0)} m`;
     if (cfg.v === "wind_speed"){ const wd = latestFor("wind_dir", loc); if (wd) context = `${windName(wd.value)} · ` + context; }
-    let spark = "";
-    try { spark = sparkline(await getJSON(`daily/${cfg.v}__${loc}.json`), cfg); } catch(e){}
+    const spark = sparkline(got.series, cfg);
+    const srcNote = got.choice ? ` · ${esc(got.choice.label)}` : "";
     return `<button type="button" class="card" data-var="${cfg.v}" aria-current="${state.variable===cfg.v}">
       <div class="label"><span>${cfg.title}</span><span class="where">${esc(where)}</span></div>
       <div class="value num">${fmt(l.value, cfg.dp)}<span class="unit">${cfg.unit}</span></div>
       <span class="chip ${d.cls}"><span aria-hidden="true">${d.icon}</span>${d.text}</span>
       <p class="context num">${context}</p>
       ${spark}
-      <div class="foot"><span>${fmtDate(l.date)}</span><span>Last 60 days</span></div>
+      <div class="foot"><span>${fmtDate(l.date)}${srcNote}</span><span>Last 60 days</span></div>
     </button>`;
   }));
   box.innerHTML = html.join("");
@@ -416,21 +438,32 @@ async function renderChart(){
   const loc = locFor(cfg);
   $("chart-name").textContent = `${cfg.title} · ${whereFor(cfg)}`;
   const svg = $("chart"); svg.innerHTML = "";
-  let series;
-  try { series = await getJSON(`daily/${cfg.v}__${loc}.json`); }
+  let series, got;
+  try { got = await getSeries(cfg, loc); series = got.series; }
   catch(e){
+    $("source-label").hidden = true;
     $("chart-sub").textContent = ""; $("legend").innerHTML = ""; $("stats").innerHTML = "";
     el("text", {x:480, y:200, "text-anchor":"middle", fill:"#6B7F87", "font-size":16}, svg).textContent = "No data has been published for this measurement and area yet.";
     current = null; return;
   }
   current = {series, cfg, loc};
+  const opts = got.combined.source_options || [];
+  const ss = $("source-select");
+  $("source-label").hidden = opts.length < 2;
+  if (opts.length >= 2){
+    const yr = o => `${o.first.slice(0,4)}–${o.last.slice(0,4)}`;
+    ss.innerHTML = `<option value="">Combined (best available)</option>` +
+      opts.map(o => `<option value="${esc(o.source)}">${esc(o.label)} (${yr(o)})</option>`).join("");
+    ss.value = got.choice ? got.choice.source : "";
+  }
   const years = [...new Set(series.data.map(r => r[0].slice(0,4)))].sort().reverse();
   const ys = $("year-select");
   if (!state.year || !years.includes(state.year)) state.year = years[0];
   ys.innerHTML = years.map(y => `<option value="${y}" ${y===state.year?"selected":""}>${y}</option>`).join("");
   $("year-label").hidden = state.mode !== "season";
   const unit = series.unit ? series.unit.replace("degC","°C").replace("m-3","m⁻³").replace("m-1","m⁻¹").replace("m-2","m⁻²").replace("day-1","day⁻¹").replace("s-1","s⁻¹") : "";
-  $("chart-sub").textContent = `${series.name} (${unit}) · record ${series.record.first.slice(0,4)}–${series.record.last.slice(0,4)}`;
+  const used = (series.source_labels || series.sources).join(", ");
+  $("chart-sub").textContent = `${series.name} (${unit}) · ${series.record.first.slice(0,4)}–${series.record.last.slice(0,4)} · ${got.choice ? "Source" : "Sources"}: ${used}`;
   renderStats(series, cfg);
   if (state.mode === "season") drawSeason(svg, series, cfg); else drawRecord(svg, series, cfg);
 }
@@ -662,7 +695,7 @@ function downloadCSV(){
   const blob = new Blob([header + body], {type:"text/csv"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `tnp_${series.variable}_${series.location}.csv`;
+  a.download = `tnp_${series.variable}_${series.location}${series.sources.length === 1 ? "_" + series.sources[0] : ""}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
@@ -677,6 +710,12 @@ async function boot(){
   vs.value = state.variable;
   vs.addEventListener("change", () => { state.variable = vs.value; store.set("variable", vs.value); document.querySelectorAll(".card").forEach(x => x.setAttribute("aria-current", String(x.dataset.var === vs.value))); renderChart(); });
   $("year-select").addEventListener("change", e => { state.year = e.target.value; renderChart(); });
+  $("source-select").addEventListener("change", e => {
+    if (e.target.value) state.src[state.variable] = e.target.value; else delete state.src[state.variable];
+    store.set("sources", JSON.stringify(state.src));
+    state.year = null;
+    renderChart(); renderCards();
+  });
   $("mode-season").addEventListener("click", () => { state.mode = "season"; $("mode-season").setAttribute("aria-pressed","true"); $("mode-record").setAttribute("aria-pressed","false"); renderChart(); });
   $("mode-record").addEventListener("click", () => { state.mode = "record"; $("mode-record").setAttribute("aria-pressed","true"); $("mode-season").setAttribute("aria-pressed","false"); renderChart(); });
   $("download").addEventListener("click", downloadCSV);
