@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from ..db import Observation
-from ..stats import area_stats, nearest_valid_cell
+from ..stats import area_stats, mask_valid, nearest_valid_cell
 from .base import Source, SourceError
 
 
@@ -58,10 +58,12 @@ class _CopernicusBase(Source):
         la, lo = _coord(ds, "latitude", "lat"), _coord(ds, "longitude", "lon")
         da = da.transpose(tname, la, lo)
         vals = np.asarray(da.values, dtype="float64")
-        if var in (self.cfg.get("kelvin_to_celsius") or []):
-            # some products already deliver Celsius; only convert values that look like Kelvin
-            if np.isfinite(vals).any() and np.nanmedian(vals) > 200:
-                vals = vals - 273.15
+        kelvin = var in (self.cfg.get("kelvin_to_celsius") or [])
+        if kelvin and np.isfinite(vals).any() and np.nanmedian(vals) > 200:
+            vals = vals - 273.15                                    # some products already deliver Celsius
+        # drop physically impossible pixels (e.g. unflagged coastal artefacts) before any statistics
+        code = self.cfg["variables"][var]
+        vals = mask_valid(vals, self.config.get("variables", {}).get(code, {}).get("valid_range"))
         times = pd.to_datetime(ds[tname].values).to_pydatetime()
         return times, np.asarray(ds[la].values), np.asarray(ds[lo].values), vals
 
