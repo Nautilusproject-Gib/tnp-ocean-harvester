@@ -159,6 +159,7 @@ sources:
     variable: par
     code: par
     earliest: "2002-07-04"
+    latest: "2026-06-19"               # no MODIS-Aqua PAR published after this; PACE carries the record on
     lookback_days: 10
 
   nasa_par_pace_nrt:
@@ -167,7 +168,7 @@ sources:
     description: PACE OCI L3 mapped daily PAR 4 km, near real time
     short_name: PACE_OCI_L3M_PAR_NRT
     granule_pattern: "*.L3m.DAY.PAR*.4km*"
-    variable: par
+    variable: par_day_planar_above     # PACE's name for daily PAR just above the sea surface (MODIS calls it 'par')
     code: par
     earliest: "2024-03-05"
     lookback_days: 10
@@ -269,6 +270,18 @@ variables:
 # Order of preference when the dashboard export merges overlapping sources
 export:
   output_dir: public/data
+  # Saharan dust days: a day is flagged when any indicator is above its threshold.
+  dust:
+    indicators:
+      - {variable: dust_sfc, location: gibraltar_airport, threshold: 50}        # CAMS surface dust, daily mean ug m-3
+      - {variable: dust_aod_550, location: europa_point, threshold: 0.2}        # CAMS EAC4 dust optical depth
+      - {variable: aeronet_aod_500, location: aeronet_malaga, threshold: 0.3,   # AERONET: high AOD with coarse particles
+         with: {variable: aeronet_ae_440_870, below: 0.6}}
+    response_window_days: 7
+    response:
+      - {variable: chl, location: gibraltar_20km}
+      - {variable: kd490, location: gibraltar_20km}
+      - {variable: par, location: gibraltar_20km}
   daily_priority:
     chl: [cmems_med_chl_my, cmems_med_chl_nrt]
     kd490: [cmems_med_kd490_my, cmems_med_kd490_nrt]
