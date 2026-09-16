@@ -5,6 +5,7 @@ Produces, under export.output_dir (default public/data):
   latest.json                        latest daily value per variable/location, with anomaly
   daily/<variable>__<location>.json  merged daily series, record statistics and day-of-year climatology
   dust_events.json                   Saharan dust episodes and what chlorophyll/light did around them
+  marine_heatwaves.json              marine heatwave events and today's status for each sea area
 
 It also copies the dashboard page (the site/ folder) next to the data, so GitHub Pages
 publishes page and data together.
@@ -199,6 +200,118 @@ def dust_events(config: dict, merged_by_key: dict, log=print) -> dict:
     return {"indicators": used, "response_window_days": window, "episodes": out}
 
 
+MHW_CATEGORIES = {1: "Moderate", 2: "Strong", 3: "Severe", 4: "Extreme"}
+
+
+def _leap_doy(index: pd.DatetimeIndex) -> np.ndarray:
+    """Day of year on a 366-day calendar, so 1 March is day 61 in every year."""
+    return np.array([pd.Timestamp(2000, d.month, d.day).dayofyear for d in index])
+
+
+def _circular_smooth(a: np.ndarray, width: int) -> np.ndarray:
+    half = width // 2
+    padded = np.concatenate([a[-half:], a, a[:half]])
+    kernel = np.ones(width) / width
+    return np.convolve(padded, kernel, mode="valid")
+
+
+def mhw_climatology(sst: pd.Series, baseline=(1991, 2020), half_window=5, smooth_days=31, min_years=10):
+    """Seasonal mean and 90th percentile threshold for each day of a 366-day year (Hobday et al. 2016)."""
+    s = sst.dropna()
+    y0, y1 = baseline
+    base = s[(s.index.year >= y0) & (s.index.year <= y1)]
+    if base.index.year.nunique() < min_years:
+        base = s                                            # record too short for the fixed baseline
+    y0, y1 = int(base.index.year.min()), int(base.index.year.max())
+    if base.index.year.nunique() < 3:
+        return None
+    doy = _leap_doy(base.index)
+    vals = base.values.astype(float)
+    seas = np.full(366, np.nan)
+    thresh = np.full(366, np.nan)
+    for d in range(1, 367):
+        dist = np.abs(doy - d)
+        dist = np.minimum(dist, 366 - dist)
+        sel = vals[dist <= half_window]
+        if sel.size >= 10:
+            seas[d - 1] = sel.mean()
+            thresh[d - 1] = np.quantile(sel, 0.9)
+    if np.isnan(seas).any():                                # fill any empty days before smoothing
+        idx = np.arange(366)
+        ok = ~np.isnan(seas)
+        seas = np.interp(idx, idx[ok], seas[ok], period=366)
+        thresh = np.interp(idx, idx[ok], thresh[ok], period=366)
+    return {"baseline": [int(y0), int(y1)], "seas": _circular_smooth(seas, smooth_days),
+            "thresh": _circular_smooth(thresh, smooth_days)}
+
+
+def marine_heatwaves(sst: pd.Series, baseline=(1991, 2020), min_days=5, max_gap_days=2):
+    """Detect marine heatwaves in a daily SST series.
+
+    A heatwave is at least `min_days` in a row above the seasonal 90th percentile; events separated by
+    `max_gap_days` or fewer are joined. Category = how many times the threshold's distance above the
+    seasonal mean the peak reached (1 Moderate, 2 Strong, 3 Severe, 4+ Extreme).
+    """
+    clim = mhw_climatology(sst, baseline)
+    if clim is None or sst.dropna().empty:
+        return None
+    s = sst.dropna().astype(float)
+    full = pd.date_range(s.index.min(), s.index.max(), freq="D")
+    s = s.reindex(full)
+    doy = _leap_doy(full) - 1
+    seas, thresh = clim["seas"][doy], clim["thresh"][doy]
+    above = (s.values > thresh) & np.isfinite(s.values)
+
+    runs, start = [], None
+    for i, flag in enumerate(above):
+        if flag and start is None:
+            start = i
+        if (not flag or i == len(above) - 1) and start is not None:
+            end = i if flag else i - 1
+            if end - start + 1 >= min_days:
+                runs.append([start, end])
+            start = None
+    joined = []
+    for r in runs:
+        if joined and r[0] - joined[-1][1] - 1 <= max_gap_days:
+            joined[-1][1] = r[1]
+        else:
+            joined.append(r)
+
+    events = []
+    for a, b in joined:
+        v = s.values[a:b + 1]
+        inten = v - seas[a:b + 1]
+        ratio = inten / np.maximum(thresh[a:b + 1] - seas[a:b + 1], 1e-6)
+        k = int(np.nanargmax(inten))
+        cat = int(min(4, max(1, np.floor(np.nanmax(ratio)))))
+        events.append({
+            "start": full[a].strftime("%Y-%m-%d"), "end": full[b].strftime("%Y-%m-%d"), "days": int(b - a + 1),
+            "peak_date": full[a + k].strftime("%Y-%m-%d"), "max_intensity": _r(np.nanmax(inten), 2),
+            "mean_intensity": _r(np.nanmean(inten), 2), "cumulative_intensity": _r(np.nansum(inten), 1),
+            "category": cat, "category_name": MHW_CATEGORIES[cat],
+        })
+
+    last = len(full) - 1
+    status = {"date": full[last].strftime("%Y-%m-%d"), "sst": _r(s.values[last], 2),
+              "seas": _r(seas[last], 2), "thresh": _r(thresh[last], 2), "state": "none"}
+    if events and events[-1]["end"] == status["date"]:
+        ev = events[-1]
+        ratio = (s.values[last] - seas[last]) / max(thresh[last] - seas[last], 1e-6)
+        status.update(state="heatwave", since=ev["start"], days=ev["days"],
+                      category=int(min(4, max(1, np.floor(ratio)))) if np.isfinite(ratio) and ratio >= 1 else 1,
+                      intensity=_r(s.values[last] - seas[last], 2))
+        status["category_name"] = MHW_CATEGORIES[status["category"]]
+    elif above[last]:
+        n = 0
+        while last - n >= 0 and above[last - n]:
+            n += 1
+        status.update(state="warm", days=int(n), intensity=_r(s.values[last] - seas[last], 2))
+    return {"baseline": clim["baseline"], "first": full[0].strftime("%Y-%m-%d"), "min_days": min_days, "max_gap_days": max_gap_days,
+            "seas": [_r(x, 3) for x in clim["seas"]], "thresh": [_r(x, 3) for x in clim["thresh"]],
+            "events": events, "status": status}
+
+
 def source_label(config: dict, code: str) -> str:
     return config.get("sources", {}).get(code, {}).get("label") or code
 
@@ -296,9 +409,24 @@ def export(config: dict, db: Database, log=print):
     events = dust_events(config, merged_by_key, log=log)
     (out_dir / "dust_events.json").write_text(json.dumps(events, indent=1))
 
+    mcfg = ecfg.get("marine_heatwaves") or {}
+    if mcfg:
+        mhw_out = {}
+        for loc in mcfg.get("locations", []):
+            m = merged_by_key.get((mcfg.get("variable", "sst"), loc))
+            if m is None or m.empty:
+                continue
+            res = marine_heatwaves(m["value"].astype(float), tuple(mcfg.get("baseline", (1991, 2020))),
+                                   int(mcfg.get("min_days", 5)), int(mcfg.get("max_gap_days", 2)))
+            if res:
+                mhw_out[loc] = res
+        (out_dir / "marine_heatwaves.json").write_text(json.dumps(mhw_out, separators=(",", ":")))
+        log(f"Marine heatwaves: " + ", ".join(f"{k} {len(v['events'])} events" for k, v in mhw_out.items()))
+
     meta = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "variables": config.get("variables", {}),
+        "groups": {"physical": "Physical", "chemical": "Chemical", "biological": "Biological"},
         "areas": config.get("areas", {}),
         "points": config.get("points", {}),
         "sources": {k: {"label": v.get("label"), "description": v.get("description"), "product": v.get("product"),
