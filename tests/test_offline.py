@@ -300,5 +300,144 @@ class TestDatabaseAndExport(unittest.TestCase):
         self.assertEqual(list(m["source"]), ["a", "a", "b"])
 
 
+class FakeDA:
+    """Just enough of an xarray DataArray for the Copernicus source code."""
+    def __init__(self, values, dims, attrs=None):
+        self.values, self.dims, self.attrs = np.asarray(values, dtype="float64"), tuple(dims), attrs or {}
+    def isel(self, sel):
+        (d, i), = sel.items()
+        ax = self.dims.index(d)
+        return FakeDA(np.take(self.values, i, axis=ax), [x for x in self.dims if x != d], self.attrs)
+    def transpose(self, *dims):
+        return FakeDA(np.transpose(self.values, [self.dims.index(d) for d in dims]), dims, self.attrs)
+
+
+class FakeDS:
+    def __init__(self, coords, data_vars):
+        self.coords, self.data_vars = coords, data_vars
+        self.dims = list(coords)
+    def __getitem__(self, k):
+        if k in self.coords:
+            return FakeDA(self.coords[k], [k]) if k != "time" else type("T", (), {"values": self.coords[k]})()
+        return self.data_vars[k]
+    def close(self):
+        pass
+
+
+class CopernicusTests(unittest.TestCase):
+    def test_variable_specs_and_resolution(self):
+        from harvester.sources.copernicus import resolve_variable, variable_specs
+        specs = variable_specs({"variables": {"CHL": "chl", "DIATO": {"code": "diatoms", "match": "diatom"},
+                                              "dissic": {"code": "dic", "scale": 1000}}})
+        self.assertEqual([s["code"] for s in specs], ["chl", "diatoms", "dic"])
+        self.assertEqual(specs[2]["scale"], 1000)
+        ds_vars = {"chl": {}, "DIATOMS_CHL": {"long_name": "Mass concentration of diatoms"}}
+        self.assertEqual(resolve_variable(ds_vars, specs[0]), "chl")
+        self.assertEqual(resolve_variable({"Chl": {}}, specs[0]), "Chl")
+        self.assertEqual(resolve_variable(ds_vars, specs[1]), "DIATOMS_CHL")
+        self.assertIsNone(resolve_variable(ds_vars, specs[2]))
+
+    def test_current_stats_direction(self):
+        from harvester.sources.copernicus import current_stats
+        stats, d = current_stats([[1.0, 1.0], [np.nan, 1.0]], [[0.0, 0.0], [0.0, 0.0]])
+        self.assertAlmostEqual(d, 90.0)                      # flowing east
+        self.assertEqual(stats["n_valid"], 3)
+        self.assertAlmostEqual(stats["val_mean"], 1.0)
+        _, d = current_stats([[0.0]], [[-0.5]])
+        self.assertAlmostEqual(d, 180.0)                     # flowing south
+        _, d = current_stats([[-0.3]], [[0.0]])
+        self.assertAlmostEqual(d, 270.0)                     # flowing west
+
+    def _fake(self, data_vars, n_days=3):
+        import pandas as pd
+        lats = np.arange(35.80, 36.45, 0.042)
+        lons = np.arange(-5.80, -4.45, 0.042)
+        times = pd.date_range("2024-06-01", periods=n_days, freq="D").values
+        dv = {k: FakeDA(fn(len(times), len(lats), len(lons)), ["time", "depth", "latitude", "longitude"], attrs)
+              for k, (fn, attrs) in data_vars.items()}
+        return FakeDS({"time": times, "latitude": lats, "longitude": lons, "depth": np.array([1.0, 3.0])}, dv)
+
+    def test_currents_derived_from_model_grid(self):
+        from harvester.sources.copernicus import CopernicusGrid
+        ds = self._fake({"uo": (lambda t, y, x: np.full((t, 2, y, x), 0.3), {"units": "m s-1"}),
+                         "vo": (lambda t, y, x: np.full((t, 2, y, x), 0.4), {"units": "m s-1"})})
+        src = CopernicusGrid("cmems_med_cur_my", CONFIG["sources"]["cmems_med_cur_my"], CONFIG)
+        src._open = lambda *a, **k: ds
+        obs = src.fetch(date(2024, 6, 1), date(2024, 6, 3))
+        speed = [o for o in obs if o.variable == "current_speed"]
+        dirs = [o for o in obs if o.variable == "current_dir"]
+        self.assertEqual(len(speed), 3 * len(CONFIG["areas"]))
+        self.assertAlmostEqual(speed[0].val_mean, 0.5)
+        self.assertAlmostEqual(dirs[0].val_mean, np.degrees(np.arctan2(0.3, 0.4)))
+
+    def test_scale_and_valid_range(self):
+        from harvester.sources.copernicus import CopernicusGrid
+        ds = self._fake({"ph": (lambda t, y, x: np.full((t, 2, y, x), 8.1), {}),
+                         "dissic": (lambda t, y, x: np.full((t, 2, y, x), 2.3), {"units": "mol m-3"}),
+                         "talk": (lambda t, y, x: np.full((t, 2, y, x), 99.0), {})}, n_days=1)
+        src = CopernicusGrid("cmems_med_car_my", CONFIG["sources"]["cmems_med_car_my"], CONFIG)
+        src._open = lambda *a, **k: ds
+        obs = {o.variable: o for o in src.fetch(date(2024, 6, 1), date(2024, 6, 1)) if o.location == "gibraltar_20km"}
+        self.assertAlmostEqual(obs["dic"].val_mean, 2300.0)
+        self.assertAlmostEqual(obs["ph"].val_mean, 8.1)
+        self.assertEqual(obs["alkalinity"].n_valid, 0)        # 99 000 mmol m-3 is impossible, so masked
+
+    def test_new_sources_are_consistent(self):
+        from harvester.sources.copernicus import variable_specs
+        for code, cfg in CONFIG["sources"].items():
+            if not cfg["type"].startswith("copernicus"):
+                continue
+            codes = [s["code"] for s in variable_specs(cfg)]
+            if cfg.get("derive") == "currents":
+                codes = ["current_speed", "current_dir"]
+            for v in codes:
+                self.assertIn(v, CONFIG["variables"], f"{code}: {v} missing from variables")
+                self.assertIn(CONFIG["variables"][v]["group"], ("physical", "chemical", "biological"))
+        for v, srcs in CONFIG["export"]["daily_priority"].items():
+            for s in srcs:
+                self.assertIn(s, CONFIG["sources"], f"priority for {v} names unknown source {s}")
+
+
+class MarineHeatwaveTests(unittest.TestCase):
+    def _sst(self, years=range(1991, 2021), noise=0.3, seed=1):
+        import pandas as pd
+        idx = pd.date_range(f"{min(years)}-01-01", f"{max(years)}-12-31", freq="D")
+        rng = np.random.default_rng(seed)
+        doy = idx.dayofyear.values
+        vals = 18.5 + 3.5 * np.cos(2 * np.pi * (doy - 232) / 365.25) + rng.normal(0, noise, len(idx))
+        return pd.Series(vals, index=idx)
+
+    def test_detects_event_joins_gaps_and_categorises(self):
+        import pandas as pd
+        from harvester.export import marine_heatwaves
+        s = self._sst()
+        s.loc["2018-07-01":"2018-07-06"] += 3.0          # 6 days
+        s.loc["2018-07-09":"2018-07-15"] += 3.0          # 7 days after a 2-day gap: joined
+        s.loc["2019-08-01":"2019-08-03"] += 3.0          # only 3 days: not a heatwave
+        res = marine_heatwaves(s, baseline=(1991, 2020))
+        ev = [e for e in res["events"] if e["start"].startswith("2018-07")]
+        self.assertEqual(len(ev), 1)
+        self.assertEqual((ev[0]["start"], ev[0]["end"], ev[0]["days"]), ("2018-07-01", "2018-07-15", 15))
+        self.assertGreaterEqual(ev[0]["category"], 3)    # +3 C against a threshold about 0.4 C above normal
+        self.assertFalse(any(e["start"].startswith("2019-08") for e in res["events"]))
+        self.assertEqual(res["baseline"], [1991, 2020])
+        self.assertEqual(len(res["thresh"]), 366)
+        self.assertTrue(all(t > m for t, m in zip(res["thresh"], res["seas"])))
+        # random noise alone rarely makes 5-day runs above the 90th percentile
+        self.assertLess(len(res["events"]), 40)
+
+    def test_status_ongoing_and_short_record(self):
+        from harvester.export import marine_heatwaves
+        s = self._sst(years=range(2015, 2025))           # shorter than the baseline: uses all years
+        s.iloc[-8:] += 2.5
+        res = marine_heatwaves(s, baseline=(1991, 2020))
+        self.assertEqual(res["baseline"], [2015, 2024])
+        self.assertEqual(res["status"]["state"], "heatwave")
+        self.assertEqual(res["status"]["days"], 8)
+        s2 = self._sst(years=range(2015, 2025))
+        s2.iloc[-2:] += 2.5
+        self.assertEqual(marine_heatwaves(s2)["status"]["state"], "warm")
+
+
 if __name__ == "__main__":
     unittest.main()
