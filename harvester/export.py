@@ -199,6 +199,31 @@ def dust_events(config: dict, merged_by_key: dict, log=print) -> dict:
     return {"indicators": used, "response_window_days": window, "episodes": out}
 
 
+def source_label(config: dict, code: str) -> str:
+    return config.get("sources", {}).get(code, {}).get("label") or code
+
+
+def _write_series(path, config, variable, location, merged, clim, rec, options=None):
+    srcs = list(dict.fromkeys(merged["source"]))
+    idx = {s: i for i, s in enumerate(srcs)}
+    vmeta = config["variables"].get(variable, {})
+    payload = {
+        "variable": variable,
+        "location": location,
+        "unit": vmeta.get("unit"),
+        "name": vmeta.get("name", variable),
+        "statistic": vmeta.get("daily_statistic", "mean"),
+        "sources": srcs,
+        "source_labels": [source_label(config, s) for s in srcs],
+        "source_options": options or [],
+        "record": rec,
+        "climatology": clim,
+        "data": [[d.strftime("%Y-%m-%d"), round(float(v), 4), idx[s]]
+                 for d, v, s in zip(merged.index, merged["value"], merged["source"])],
+    }
+    path.write_text(json.dumps(payload, separators=(",", ":")))
+
+
 def export(config: dict, db: Database, log=print):
     ecfg = config.get("export", {})
     out_dir = Path(ecfg.get("output_dir", "public/data"))
@@ -235,21 +260,25 @@ def export(config: dict, db: Database, log=print):
         merged_by_key[(variable, location)] = merged
         clim = climatology(merged, circular=variable.endswith("_dir"))
         rec = record_stats(merged)
-        srcs = list(dict.fromkeys(merged["source"]))
-        idx = {s: i for i, s in enumerate(srcs)}
-        payload = {
-            "variable": variable,
-            "location": location,
-            "unit": config["variables"].get(variable, {}).get("unit"),
-            "name": config["variables"].get(variable, {}).get("name", variable),
-            "statistic": config["variables"].get(variable, {}).get("daily_statistic", "mean"),
-            "sources": srcs,
-            "record": rec,
-            "climatology": clim,
-            "data": [[d.strftime("%Y-%m-%d"), round(float(v), 4), idx[s]]
-                     for d, v, s in zip(merged.index, merged["value"], merged["source"])],
-        }
-        (out_dir / "daily" / f"{variable}__{location}.json").write_text(json.dumps(payload, separators=(",", ":")))
+
+        # Where more than one source exists, also publish each source on its own, so the dashboard
+        # can offer "combined" or any single source (with its own record and normal range).
+        options = []
+        if len(per_source) > 1:
+            order = [s for s in priorities.get(variable, []) if s in per_source] + \
+                    [s for s in per_source if s not in priorities.get(variable, [])]
+            for src in order:
+                single = merge_by_priority({src: per_source[src]}, [src])
+                if single.empty:
+                    continue
+                fname = f"{variable}__{location}__{src}.json"
+                _write_series(out_dir / "daily" / fname, config, variable, location, single,
+                              climatology(single, circular=variable.endswith("_dir")), record_stats(single))
+                options.append({"source": src, "label": source_label(config, src), "file": fname,
+                                "first": single.index.min().strftime("%Y-%m-%d"),
+                                "last": single.index.max().strftime("%Y-%m-%d")})
+        _write_series(out_dir / "daily" / f"{variable}__{location}.json", config, variable, location,
+                      merged, clim, rec, options)
 
         last_day = merged.index.max()
         last_val = float(merged.loc[last_day, "value"])
@@ -272,7 +301,7 @@ def export(config: dict, db: Database, log=print):
         "variables": config.get("variables", {}),
         "areas": config.get("areas", {}),
         "points": config.get("points", {}),
-        "sources": {k: {"description": v.get("description"), "product": v.get("product"),
+        "sources": {k: {"label": v.get("label"), "description": v.get("description"), "product": v.get("product"),
                         "dataset": v.get("dataset_id") or v.get("short_name") or v.get("station_id")}
                     for k, v in config["sources"].items()},
         "series": [f"{v}__{l}" for v, l in sorted(merged_by_key)],
