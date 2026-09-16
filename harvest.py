@@ -55,6 +55,13 @@ def main(argv=None):
         return 0
 
     db = Database(args.database_url)
+    try:
+        return _run_command(args, config, db)
+    finally:
+        db.close()   # folds SQLite's write-ahead log back into the .db file before it is saved
+
+
+def _run_command(args, config, db):
     db.init_schema()
     if args.command == "init":
         db.sync_metadata(config)
