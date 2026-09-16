@@ -57,7 +57,7 @@ a{color:var(--data)}
 .card{background:var(--panel);border:1px solid var(--rule);padding:16px 16px 12px;display:grid;grid-template-rows:auto auto auto 1fr auto;gap:6px;text-align:left;color:inherit;width:100%}
 .card:hover{border-color:var(--band-edge)}
 .card[aria-current="true"]{border-color:var(--blue);box-shadow:inset 0 3px 0 var(--blue)}
-.card .label{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.card .label{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 8px}
 .card .where{white-space:nowrap}
 .card .where{font-weight:400;letter-spacing:0;text-transform:none}
 .card .value{font-size:34px;font-weight:700;color:var(--ink);line-height:1.1}
@@ -70,6 +70,22 @@ a{color:var(--data)}
 .card svg{width:100%;height:44px;display:block}
 .card .foot{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--grid);padding-top:6px}
 .card.empty .value{color:#A7B6BC}
+
+/* group tabs */
+.tabs{display:flex;flex-wrap:wrap;gap:0;border-bottom:2px solid var(--rule);margin-bottom:14px}
+.tabs button{background:transparent;border:0;border-bottom:3px solid transparent;margin-bottom:-2px;padding:9px 16px;font-size:15px;font-weight:700;color:var(--muted)}
+.tabs button[aria-selected="true"]{color:var(--blue);border-bottom-color:var(--blue)}
+.tabs button:hover{color:var(--blue)}
+.tabs .count{font-weight:400;font-size:13px;margin-left:6px;color:var(--muted)}
+.group-intro{margin:0 0 12px;color:var(--muted);font-size:14px;max-width:80ch}
+.chip.heat{color:#8E2B12;background:#FBE9E3;border-color:#EDB9A8}
+.mix{display:flex;height:14px;width:100%;overflow:hidden;border:1px solid var(--grid)}
+.mix span{display:block;height:100%}
+.mix-key{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:12px;color:var(--muted)}
+.mix-key i{display:inline-block;width:9px;height:9px;margin-right:5px;vertical-align:-1px}
+.card .badge{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--rule);padding:0 5px;margin-left:6px}
+.key.heat{height:10px;border:0;background:#F6D5CA}
+.key.dot{border-top:2px dotted #C0502E}
 
 /* chart panel */
 .panel{background:var(--panel);border:1px solid var(--rule);padding:20px}
@@ -165,7 +181,9 @@ details ul{padding-left:18px;margin:8px 0}
       <h2 id="today-h">Today's conditions</h2>
       <p>Each card shows the most recent value and how it compares with the same time of year across the whole record. Select a card to see its chart.</p>
     </div>
-    <div class="cards" id="cards"><div class="loading">Loading…</div></div>
+    <div class="tabs" role="tablist" aria-label="Type of measurement" id="tabs"></div>
+    <p class="group-intro" id="group-intro"></p>
+    <div class="cards" id="cards" role="tabpanel" aria-labelledby="tab-physical"><div class="loading">Loading…</div></div>
   </section>
 
   <section class="section" aria-labelledby="chart-h">
@@ -181,6 +199,7 @@ details ul{padding-left:18px;margin:8px 0}
         </div>
         <label for="year-select" id="year-label">Year <select id="year-select"></select></label>
         <label for="var-select">Measurement <select id="var-select"></select></label>
+        <label for="source-select" id="source-label" hidden>Data source <select id="source-select"></select></label>
       </div>
       <div class="chart-title">
         <h3 id="chart-name">—</h3>
@@ -202,7 +221,7 @@ details ul{padding-left:18px;margin:8px 0}
   <section class="section" aria-labelledby="dust-h">
     <div class="section-head">
       <h2 id="dust-h">Saharan dust episodes</h2>
-      <p>Dust blown north from the Sahara can carry iron and other nutrients to the sea surface. For each episode we compare chlorophyll, water clarity and light in the week before with the week after, averaged over the 20&nbsp;km box around Gibraltar.</p>
+      <p>Dust blown north from the Sahara can carry iron and other nutrients to the sea surface. For each episode we compare chlorophyll, light attenuation (KD490) and light in the week before with the week after, averaged over the 20&nbsp;km box around Gibraltar.</p>
     </div>
     <div class="dust-summary" id="dust-summary"></div>
     <div class="table-wrap">
@@ -210,7 +229,7 @@ details ul{padding-left:18px;margin:8px 0}
         <caption class="note" style="caption-side:bottom;text-align:left;padding:10px 12px" id="dust-caption"></caption>
         <thead>
           <tr><th scope="col">Dates</th><th scope="col" class="n">Days</th><th scope="col" class="n">Peak dust</th>
-              <th scope="col" class="n">Chlorophyll after</th><th scope="col" class="n">Water clarity (Kd490) after</th><th scope="col" class="n">Light (PAR) after</th></tr>
+              <th scope="col" class="n">Chlorophyll after</th><th scope="col" class="n">Attenuation (KD490) after</th><th scope="col" class="n">Light (PAR) after</th></tr>
         </thead>
         <tbody id="dust-rows"></tbody>
       </table>
@@ -223,15 +242,34 @@ details ul{padding-left:18px;margin:8px 0}
     <details>
       <summary>What each measurement means</summary>
       <div class="inner">
+        <h3 style="font-size:16px;margin-top:4px">Physical</h3>
         <ul>
-          <li><strong>Sea surface temperature</strong>: the "foundation" temperature just below the surface, without daytime warming, from a gap-filled satellite analysis.</li>
-          <li><strong>Chlorophyll-a</strong>: the green pigment in phytoplankton, the microscopic plants at the base of the marine food web. Higher values mean more plankton.</li>
-          <li><strong>Water clarity (Kd490)</strong>: how quickly blue light fades with depth. Higher values mean murkier water. We also show roughly how deep 1% of surface blue light reaches (4.6 ÷ Kd490).</li>
+          <li><strong>Sea Surface Temperature (SST)</strong>: the "foundation" temperature just below the surface, without daytime warming, from a gap-filled satellite analysis.</li>
+          <li><strong>Marine heatwave</strong>: at least 5 days in a row warmer than the warmest 10% of days for that time of year over a 30-year reference period (Hobday method). Categories I to IV (moderate, strong, severe, extreme) show how far above normal the peak went.</li>
           <li><strong>Light (PAR)</strong>: photosynthetically available radiation, the sunlight plankton and seagrass can use, as moles of photons per square metre per day.</li>
+          <li><strong>Attenuation Coefficient (KD490)</strong>: how quickly blue light (490&nbsp;nm) fades with depth, in m⁻¹. Higher values mean murkier water. We also show roughly how deep 1% of surface blue light reaches (4.6 ÷ KD490).</li>
+          <li><strong>Surface current</strong>: speed of the top metre of water and the direction it flows towards. Through the Strait, Atlantic water usually flows east into the Mediterranean.</li>
+          <li><strong>Salinity</strong>: saltiness in practical salinity units. Fresher Atlantic water (about 36.5) meets saltier Mediterranean water (38 and above) around Gibraltar.</li>
+          <li><strong>Mixed layer depth</strong>: how deep the surface layer is stirred by wind and cooling. Deep winter mixing brings nutrients up; shallow summer layers trap plankton near the light.</li>
           <li><strong>Waves</strong>: significant wave height off Europa Point, roughly the average height of the highest third of waves.</li>
           <li><strong>Wind</strong>: 10&nbsp;m wind at the airport. Easterly winds are the Levanter, westerlies the Poniente.</li>
-          <li><strong>Saharan dust</strong>: modelled dust concentration near the ground. We flag a dust day above 50&nbsp;µg&nbsp;m⁻³.</li>
         </ul>
+        <h3 style="font-size:16px">Chemical</h3>
+        <ul>
+          <li><strong>Saharan dust</strong>: modelled dust concentration near the ground. We flag a dust day above 50&nbsp;µg&nbsp;m⁻³.</li>
+          <li><strong>Nitrate, phosphate and ammonium</strong>: the main nutrients phytoplankton need to grow, in millimoles per cubic metre.</li>
+          <li><strong>Dissolved oxygen</strong>: oxygen in surface water. Cold water holds more; plankton growth adds it.</li>
+          <li><strong>pH, pCO₂, dissolved inorganic carbon and alkalinity</strong>: the seawater carbonate system. Falling pH and rising pCO₂ over the years are signs of ocean acidification.</li>
+          <li><strong>Dissolved organic matter (CDOM)</strong>: light absorbed at 443&nbsp;nm by coloured dissolved material and detritus, often from rivers, runoff and plankton breakdown. From satellite.</li>
+        </ul>
+        <h3 style="font-size:16px">Biological</h3>
+        <ul>
+          <li><strong>Chlorophyll-a</strong>: the green pigment in phytoplankton, the microscopic plants at the base of the marine food web. Higher values mean more plankton.</li>
+          <li><strong>Plankton groups and sizes</strong>: satellite estimates of how the chlorophyll is split between diatoms, dinoflagellates and other groups, and between micro (&gt;20&nbsp;µm), nano (2–20&nbsp;µm) and pico (&lt;2&nbsp;µm) phytoplankton. Bigger cells tend to dominate in nutrient-rich water.</li>
+          <li><strong>Primary production</strong>: how much carbon phytoplankton fix through the whole water column each day, estimated from satellite chlorophyll, light and temperature.</li>
+          <li><strong>Phytoplankton and zooplankton carbon</strong>: plankton biomass as carbon, from the biogeochemistry model.</li>
+        </ul>
+        <p>Cards marked <strong>Model</strong> come from the Copernicus Mediterranean physics and biogeochemistry models for the top metre of water (4.2&nbsp;km grid). Models are a best estimate that combines physics, biology and observations; they are not direct measurements, and in small areas such as the Bay they rest on only a few grid cells.</p>
       </div>
     </details>
     <details>
@@ -239,7 +277,9 @@ details ul{padding-left:18px;margin:8px 0}
       <div class="inner">
         <p>For every day of the year we gather all values within 7 days either side, across every year in the record. From those we calculate the average, the standard deviation, and the lowest and highest values. A 15-day window smooths out gaps where cloud hides the sea from the satellites.</p>
         <p>"About normal" means within half a standard deviation of the average. "Slightly" is up to one standard deviation away, "much" is more than two.</p>
-        <p>Where a reprocessed dataset and a near-real-time one overlap, we use the reprocessed values. Chlorophyll is naturally skewed, so its lower band edge is held at zero.</p>
+        <p>"Combined" uses the best available source for each day: reprocessed satellite data before near-real-time data, and ERA5 before the airport station for weather. Where a measurement has more than one source, the <em>Data source</em> menu shows one source on its own, with its own average and limits.</p>
+        <p>The marine heatwave level uses its own method: an 11-day window, the 90th percentile over 1991–2020 (or every year available if the record is shorter), smoothed over 31 days. Heatwaves are worked out from the combined SST series.</p>
+        <p>For satellite ocean colour (chlorophyll, KD490, plankton groups, CDOM and primary production) each day's value is the median of the cloud-free pixels in the area, so a few bad coastal pixels can't skew it. Values outside a physically possible range are discarded. Chlorophyll is naturally skewed, so its lower band edge is held at zero.</p>
       </div>
     </details>
     <details>
@@ -264,16 +304,58 @@ const AREAS = [
   ["gibraltar_20km","Around Gibraltar (20 km)","20 km box"],["bay_of_gibraltar","Bay of Gibraltar","Bay"],
   ["gibraltar_eastside","Eastside","Eastside"],["strait_of_gibraltar","Strait of Gibraltar","Strait"],["western_alboran","Western Alboran","W. Alboran"]
 ];
-// cards: variable, where it lives, how to talk about it
-const VARS = [
-  {v:"sst", title:"Sea temperature", loc:"area", unit:"°C", dp:1, up:"Warmer", down:"Cooler"},
-  {v:"chl", title:"Chlorophyll", loc:"area", unit:"mg/m³", dp:2, up:"More plankton", down:"Less plankton", floor0:true},
-  {v:"kd490", title:"Water clarity", loc:"area", unit:"Kd490 m⁻¹", dp:3, up:"Murkier", down:"Clearer", floor0:true},
-  {v:"par", title:"Light (PAR)", loc:"area", unit:"mol/m²/day", dp:0, up:"Brighter", down:"Duller", floor0:true},
-  {v:"wave_hs", title:"Waves", loc:"europa_point", where:"Europa Point", unit:"m", dp:1, up:"Rougher", down:"Calmer", floor0:true},
-  {v:"wind_speed", title:"Wind", loc:"gibraltar_airport", where:"Airport", unit:"m/s", dp:1, up:"Windier", down:"Calmer", floor0:true},
-  {v:"dust_sfc", title:"Saharan dust", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:0, up:"Dustier", down:"Less dust", floor0:true, threshold:50},
+// Measurements, sorted into physical, chemical and biological groups.
+// card:false = in the chart menu only. sat:true = satellite series with cloud gaps (drawn as dots).
+const GROUPS = [
+  ["physical", "Physical", "Temperature, light, currents, waves and weather: the physical setting that everything else responds to. More measurements are in the chart menu below."],
+  ["chemical", "Chemical", "Nutrients, oxygen, the carbonate system and Saharan dust. Sea values come from the Copernicus Mediterranean biogeochemistry model, not direct measurement."],
+  ["biological", "Biological", "Phytoplankton: how much there is, which groups and sizes dominate, and how fast it grows. Most values are from satellite; cards marked Model come from the Copernicus biogeochemistry model."],
 ];
+const VARS = [
+  // physical
+  {g:"physical", v:"sst", title:"Sea Surface Temperature", short:"SST", loc:"area", unit:"°C", dp:1, up:"Warmer", down:"Cooler"},
+  {g:"physical", v:"mhw", special:"mhw", title:"Marine heatwave", loc:"area", chartVar:"sst"},
+  {g:"physical", v:"par", title:"Light (PAR)", loc:"area", unit:"mol/m²/day", dp:0, up:"Brighter", down:"Duller", floor0:true, sat:true},
+  {g:"physical", v:"kd490", title:"Attenuation Coefficient (KD490)", short:"KD490", loc:"area", unit:"m⁻¹", dp:3, up:"Murkier", down:"Clearer", floor0:true, sat:true},
+  {g:"physical", v:"current_speed", title:"Surface current", loc:"area", unit:"m/s", dp:2, up:"Faster", down:"Slower", floor0:true, model:true},
+  {g:"physical", v:"salinity", title:"Salinity", loc:"area", unit:"PSU", dp:2, up:"Saltier", down:"Fresher", model:true},
+  {g:"physical", v:"mld", title:"Mixed layer depth", loc:"area", unit:"m", dp:0, up:"Deeper mixing", down:"Shallower mixing", floor0:true, model:true},
+  {g:"physical", v:"wave_hs", title:"Waves", loc:"europa_point", where:"Europa Point", unit:"m", dp:1, up:"Rougher", down:"Calmer", floor0:true},
+  {g:"physical", v:"wind_speed", title:"Wind", loc:"gibraltar_airport", where:"Airport", unit:"m/s", dp:1, up:"Windier", down:"Calmer", floor0:true},
+  {g:"physical", v:"bbp443", title:"Particle backscatter (443 nm)", loc:"area", unit:"m⁻¹", dp:4, up:"More particles", down:"Fewer particles", floor0:true, sat:true, card:false},
+  {g:"physical", v:"air_temp", title:"Air temperature", loc:"gibraltar_airport", where:"Airport", unit:"°C", dp:1, up:"Warmer", down:"Cooler", card:false},
+  {g:"physical", v:"precip", title:"Rain", loc:"gibraltar_airport", where:"Airport", unit:"mm", dp:1, up:"Wetter", down:"Drier", floor0:true, card:false},
+  // chemical
+  {g:"chemical", v:"dust_sfc", title:"Saharan dust", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:0, up:"Dustier", down:"Less dust", floor0:true, threshold:50},
+  {g:"chemical", v:"nitrate", title:"Nitrate", loc:"area", unit:"mmol/m³", dp:2, up:"More nitrate", down:"Less nitrate", floor0:true, model:true},
+  {g:"chemical", v:"phosphate", title:"Phosphate", loc:"area", unit:"mmol/m³", dp:3, up:"More phosphate", down:"Less phosphate", floor0:true, model:true},
+  {g:"chemical", v:"oxygen", title:"Dissolved oxygen", loc:"area", unit:"mmol/m³", dp:0, up:"More oxygen", down:"Less oxygen", model:true},
+  {g:"chemical", v:"ph", title:"pH", loc:"area", unit:"", dp:3, up:"Less acidic", down:"More acidic", model:true},
+  {g:"chemical", v:"pco2", title:"Surface pCO₂", loc:"area", unit:"µatm", dp:0, up:"Higher", down:"Lower", model:true},
+  {g:"chemical", v:"cdom_adg443", title:"Dissolved organic matter (CDOM)", loc:"area", unit:"m⁻¹", dp:3, up:"More", down:"Less", floor0:true, sat:true},
+  {g:"chemical", v:"ammonium", title:"Ammonium", loc:"area", unit:"mmol/m³", dp:2, up:"More ammonium", down:"Less ammonium", floor0:true, model:true, card:false},
+  {g:"chemical", v:"dic", title:"Dissolved inorganic carbon", loc:"area", unit:"mmol/m³", dp:0, up:"Higher", down:"Lower", model:true, card:false},
+  {g:"chemical", v:"alkalinity", title:"Total alkalinity", loc:"area", unit:"mmol/m³", dp:0, up:"Higher", down:"Lower", model:true, card:false},
+  {g:"chemical", v:"aod_550", title:"Aerosol optical depth", loc:"gibraltar_airport", where:"Gibraltar", unit:"", dp:2, up:"Hazier", down:"Clearer", floor0:true, card:false},
+  // biological
+  {g:"biological", v:"chl", title:"Chlorophyll", loc:"area", unit:"mg/m³", dp:2, up:"More plankton", down:"Less plankton", floor0:true, sat:true},
+  {g:"biological", v:"sizes", special:"sizes", title:"Plankton size mix", loc:"area", chartVar:"pico_phyto"},
+  {g:"biological", v:"pp_sat", title:"Primary production", loc:"area", unit:"g C/m²/day", dp:2, up:"More growth", down:"Less growth", floor0:true, sat:true},
+  {g:"biological", v:"diatoms", title:"Diatoms", loc:"area", unit:"mg/m³", dp:3, up:"More diatoms", down:"Fewer diatoms", floor0:true, sat:true},
+  {g:"biological", v:"dinoflagellates", title:"Dinoflagellates", loc:"area", unit:"mg/m³", dp:3, up:"More", down:"Fewer", floor0:true, sat:true},
+  {g:"biological", v:"phyto_carbon", title:"Phytoplankton carbon", loc:"area", unit:"mmol C/m³", dp:2, up:"More", down:"Less", floor0:true, model:true},
+  {g:"biological", v:"micro_phyto", title:"Microphytoplankton (>20 µm)", loc:"area", unit:"mg/m³", dp:3, up:"More", down:"Less", floor0:true, sat:true, card:false},
+  {g:"biological", v:"nano_phyto", title:"Nanophytoplankton (2–20 µm)", loc:"area", unit:"mg/m³", dp:3, up:"More", down:"Less", floor0:true, sat:true, card:false},
+  {g:"biological", v:"pico_phyto", title:"Picophytoplankton (<2 µm)", loc:"area", unit:"mg/m³", dp:3, up:"More", down:"Less", floor0:true, sat:true, card:false},
+  {g:"biological", v:"haptophytes", title:"Haptophytes", loc:"area", unit:"mg/m³", dp:3, up:"More", down:"Fewer", floor0:true, sat:true, card:false},
+  {g:"biological", v:"cryptophytes", title:"Cryptophytes", loc:"area", unit:"mg/m³", dp:3, up:"More", down:"Fewer", floor0:true, sat:true, card:false},
+  {g:"biological", v:"green_algae", title:"Green algae and prochlorophytes", loc:"area", unit:"mg/m³", dp:3, up:"More", down:"Fewer", floor0:true, sat:true, card:false},
+  {g:"biological", v:"prokaryotes", title:"Prokaryotes", loc:"area", unit:"mg/m³", dp:3, up:"More", down:"Fewer", floor0:true, sat:true, card:false},
+  {g:"biological", v:"npp_model", title:"Net primary production (model)", loc:"area", unit:"mg C/m³/day", dp:1, up:"More growth", down:"Less growth", floor0:true, model:true, card:false},
+  {g:"biological", v:"zoo_carbon", title:"Zooplankton carbon (model)", loc:"area", unit:"mmol C/m³", dp:2, up:"More", down:"Less", floor0:true, model:true, card:false},
+];
+const CHART_VARS = VARS.filter(c => !c.special);
+const groupOf = v => (VARS.find(c => c.v === v) || {}).g || "physical";
 const DUST_THRESHOLD = 50;
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fmtDate = d => new Date(d+"T00:00:00Z").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric",timeZone:"UTC"});
@@ -295,8 +377,27 @@ const store = {
   set(k, v){ try { localStorage.setItem("tnp-obs-"+k, v); } catch(e){} }
 };
 
-const state = { area: store.get("area","gibraltar_20km"), variable: store.get("variable","sst"), mode:"season", year:null };
-let meta = null, latest = [], dust = null;
+const state = { area: store.get("area","gibraltar_20km"), variable: store.get("variable","sst"), mode:"season", year:null,
+  group: store.get("group","physical"),
+  src: (() => { try { return JSON.parse(store.get("sources","{}")) || {}; } catch(e){ return {}; } })() };
+
+// The combined file lists any single-source alternatives; load the one chosen for this variable.
+async function getSeries(cfg, loc){
+  const combined = await getJSON(`daily/${cfg.v}__${loc}.json`);
+  const want = state.src[cfg.v];
+  const opt = want && (combined.source_options || []).find(o => o.source === want);
+  if (!opt) return {series: combined, combined, choice: null};
+  try { return {series: await getJSON("daily/" + opt.file), combined, choice: opt}; }
+  catch(e){ return {series: combined, combined, choice: null}; }
+}
+function cardFromSeries(series){
+  const rows = series.data; if (!rows.length) return null;
+  const last = rows[rows.length-1], c = series.climatology;
+  const i = doyOf(last[0]) - 1;
+  const mean = c && c.mean[i] != null ? c.mean[i] : null, sd = c && c.sd[i] != null ? c.sd[i] : null;
+  return {date:last[0], value:last[1], clim_mean:mean, clim_sd:sd, z: mean != null && sd ? (last[1]-mean)/sd : null};
+}
+let meta = null, latest = [], dust = null, mhw = null;
 
 function locFor(cfg){ return cfg.loc === "area" ? state.area : cfg.loc; }
 function areaName(code, short){ const a = AREAS.find(a => a[0] === code); return a ? a[short ? 2 : 1] : code; }
@@ -319,6 +420,39 @@ function windName(deg){
   return ["northerly","north-easterly","easterly","south-easterly","southerly","south-westerly","westerly","north-westerly"][Math.round(deg/45)%8];
 }
 
+function compass(deg){
+  if (deg == null || !isFinite(deg)) return "";
+  return ["north","north-east","east","south-east","south","south-west","west","north-west"][Math.round(deg/45)%8];
+}
+const ROMAN = ["","I","II","III","IV"];
+
+/* ---------------- group tabs ---------------- */
+function renderTabs(){
+  const box = $("tabs");
+  box.innerHTML = GROUPS.map(([code, name]) => {
+    return `<button type="button" role="tab" id="tab-${code}" aria-selected="${state.group === code}" tabindex="${state.group === code ? 0 : -1}" data-group="${code}">${name}</button>`;
+  }).join("");
+  const g = GROUPS.find(x => x[0] === state.group) || GROUPS[0];
+  $("group-intro").textContent = g[2];
+  $("cards").setAttribute("aria-labelledby", "tab-" + g[0]);
+  const tabs = [...box.querySelectorAll("button")];
+  tabs.forEach((b, i) => {
+    b.addEventListener("click", () => selectGroup(b.dataset.group));
+    b.addEventListener("keydown", e => {
+      const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (!d) return;
+      e.preventDefault();
+      const next = tabs[(i + d + tabs.length) % tabs.length];
+      selectGroup(next.dataset.group); $("tab-" + next.dataset.group).focus();
+    });
+  });
+}
+function selectGroup(code){
+  if (state.group === code) return;
+  state.group = code; store.set("group", code);
+  renderTabs(); renderCards();
+}
+
 /* ---------------- area buttons ---------------- */
 function renderAreas(){
   const box = document.querySelector(".areas");
@@ -335,37 +469,105 @@ function renderAreas(){
 /* ---------------- cards ---------------- */
 async function renderCards(){
   const box = $("cards");
-  const html = await Promise.all(VARS.map(async cfg => {
+  const list = VARS.filter(c => c.g === state.group && c.card !== false);
+  const html = await Promise.all(list.map(async cfg => {
+    if (cfg.special === "mhw") return mhwCard(cfg);
+    if (cfg.special === "sizes") return sizesCard(cfg);
     const loc = locFor(cfg);
-    const l = latestFor(cfg.v, loc);
+    let got = null;
+    try { got = await getSeries(cfg, loc); } catch(e){}
+    const l = got ? cardFromSeries(got.series) : null;
     const where = whereFor(cfg, true);
     if (!l) return `<button type="button" class="card empty" data-var="${cfg.v}" aria-current="${state.variable===cfg.v}">
-      <div class="label"><span>${cfg.title}</span><span class="where">${esc(where)}</span></div>
+      <div class="label"><span>${cfg.title}${cfg.model ? '<span class="badge">Model</span>' : ""}</span><span class="where">${esc(where)}</span></div>
       <div class="value">–</div><span class="chip normal">● Not available yet</span><p class="context">No data has been published for this yet.</p><span></span><div class="foot"><span></span></div></button>`;
     const d = describe(cfg, l.z);
     let context = "";
     if (l.clim_mean != null) context = `Normal for ${fmtShort(l.date)}: ${fmt(l.clim_mean, cfg.dp)} ± ${fmt(l.clim_sd, cfg.dp)}`;
     if (cfg.v === "kd490" && l.value > 0) context += `<br>1% of blue light reaches about ${fmt(4.6 / l.value, 0)} m`;
     if (cfg.v === "wind_speed"){ const wd = latestFor("wind_dir", loc); if (wd) context = `${windName(wd.value)} · ` + context; }
-    let spark = "";
-    try { spark = sparkline(await getJSON(`daily/${cfg.v}__${loc}.json`), cfg); } catch(e){}
+    if (cfg.v === "current_speed"){ const cd = latestFor("current_dir", loc); if (cd && cd.value != null) context = `Flowing ${compass(cd.value)} · ` + context; }
+    const spark = sparkline(got.series, cfg);
+    const srcNote = got.choice ? ` · ${esc(got.choice.label)}` : "";
     return `<button type="button" class="card" data-var="${cfg.v}" aria-current="${state.variable===cfg.v}">
-      <div class="label"><span>${cfg.title}</span><span class="where">${esc(where)}</span></div>
+      <div class="label"><span>${cfg.title}${cfg.model ? '<span class="badge">Model</span>' : ""}</span><span class="where">${esc(where)}</span></div>
       <div class="value num">${fmt(l.value, cfg.dp)}<span class="unit">${cfg.unit}</span></div>
       <span class="chip ${d.cls}"><span aria-hidden="true">${d.icon}</span>${d.text}</span>
       <p class="context num">${context}</p>
       ${spark}
-      <div class="foot"><span>${fmtDate(l.date)}</span><span>Last 60 days</span></div>
+      <div class="foot"><span>${fmtDate(l.date)}${srcNote}</span><span>Last 60 days</span></div>
     </button>`;
   }));
   box.innerHTML = html.join("");
   box.querySelectorAll(".card").forEach(c => c.addEventListener("click", () => {
-    state.variable = c.dataset.var; store.set("variable", state.variable);
+    const cfg = VARS.find(x => x.v === c.dataset.var);
+    state.variable = (cfg && cfg.chartVar) || c.dataset.var; store.set("variable", state.variable);
     box.querySelectorAll(".card").forEach(x => x.setAttribute("aria-current", String(x === c)));
     $("var-select").value = state.variable;
     renderChart();
     $("chart-h").scrollIntoView({behavior:"smooth", block:"start"});
   }));
+}
+
+function emptyCard(cfg, where, msg){
+  return `<button type="button" class="card empty" data-var="${cfg.v}" aria-current="false">
+    <div class="label"><span>${cfg.title}</span><span class="where">${esc(where)}</span></div>
+    <div class="value">–</div><span class="chip normal">● Not available yet</span><p class="context">${msg}</p><span></span><div class="foot"><span></span></div></button>`;
+}
+function mhwCard(cfg){
+  const where = whereFor(cfg, true);
+  const m = mhw && mhw[state.area];
+  if (!m) return emptyCard(cfg, where, "Needs several years of sea temperature for this area.");
+  const st = m.status, evs = m.events;
+  const anom = st.sst != null && st.seas != null ? st.sst - st.seas : null;
+  let chip, context;
+  if (st.state === "heatwave"){
+    chip = `<span class="chip heat"><span aria-hidden="true">▲</span>Category ${ROMAN[st.category]} (${esc(st.category_name)}), day ${st.days}</span>`;
+    context = `In a marine heatwave since ${fmtShort(st.since)}. Heatwave level for the date: ${fmt(st.thresh, 1)} °C.`;
+  } else if (st.state === "warm"){
+    chip = `<span class="chip up"><span aria-hidden="true">▲</span>Above heatwave level, ${st.days} day${st.days > 1 ? "s" : ""} so far</span>`;
+    context = `It becomes a heatwave after 5 days in a row above ${fmt(st.thresh, 1)} °C.`;
+  } else {
+    chip = `<span class="chip normal"><span aria-hidden="true">●</span>No marine heatwave</span>`;
+    context = `Heatwave level for ${fmtShort(st.date)}: ${fmt(st.thresh, 1)} °C (warmest 10% of days, ${m.baseline[0]}–${m.baseline[1]}).`;
+  }
+  const lastEv = evs.length ? evs[evs.length - 1] : null;
+  const since = new Date(st.date + "T00:00:00Z"); since.setUTCFullYear(since.getUTCFullYear() - 1);
+  const yearCount = evs.filter(e => new Date(e.end + "T00:00:00Z") >= since).length;
+  return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
+    <div class="label"><span>${cfg.title}</span><span class="where">${esc(where)}</span></div>
+    <div class="value num">${anom == null ? "–" : (anom > 0 ? "+" : "") + fmt(anom, 1)}<span class="unit">°C against normal</span></div>
+    ${chip}
+    <p class="context">${context}</p>
+    <p class="context num">${yearCount} heatwave${yearCount === 1 ? "" : "s"} in the past 12 months, ${evs.length} since ${(m.first || st.date).slice(0,4)}.${lastEv && st.state !== "heatwave" ? ` Last: ${fmtShort(lastEv.start)} ${lastEv.start.slice(0,4)}, ${lastEv.days} days, ${esc(lastEv.category_name.toLowerCase())}.` : ""}</p>
+    <div class="foot"><span>${fmtDate(st.date)}</span><span>Hobday method</span></div>
+  </button>`;
+}
+const SIZE_PARTS = [["micro_phyto","Micro (>20 µm)","#034560"],["nano_phyto","Nano (2–20 µm)","#0074A6"],["pico_phyto","Pico (<2 µm)","#76CCF9"]];
+async function sizesCard(cfg){
+  const where = whereFor(cfg, true), loc = locFor(cfg);
+  let parts;
+  try { parts = await Promise.all(SIZE_PARTS.map(p => getJSON(`daily/${p[0]}__${loc}.json`))); }
+  catch(e){ return emptyCard(cfg, where, "Appears once the phytoplankton size classes have been harvested."); }
+  // most recent day with all three classes
+  const maps = parts.map(s => new Map(s.data.map(r => [r[0], r[1]])));
+  const day = parts[2].data.map(r => r[0]).reverse().find(d => maps.every(m => m.has(d)));
+  if (!day) return emptyCard(cfg, where, "No day yet with all three size classes.");
+  const vals = maps.map(m => m.get(day)), tot = vals.reduce((a, b) => a + b, 0) || 1;
+  const pct = vals.map(v => v / tot * 100);
+  const top = pct.indexOf(Math.max(...pct));
+  const clim = parts.map(s => s.climatology), i = doyOf(day) - 1;
+  const cm = clim.every(c => c && c.mean[i] != null) ? clim.map(c => c.mean[i]) : null;
+  const ctot = cm ? cm.reduce((a, b) => a + b, 0) : 0;
+  const normal = cm && ctot ? `Normal for ${fmtShort(day)}: ${cm.map((v, k) => `${SIZE_PARTS[k][1].split(" ")[0].toLowerCase()} ${fmt(v / ctot * 100, 0)}%`).join(", ")}` : "";
+  return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
+    <div class="label"><span>${cfg.title}</span><span class="where">${esc(where)}</span></div>
+    <div class="value num">${fmt(pct[top], 0)}%<span class="unit">${SIZE_PARTS[top][1].split(" ")[0].toLowerCase()}plankton</span></div>
+    <div class="mix" role="img" aria-label="${SIZE_PARTS.map((p, k) => `${p[1]} ${fmt(pct[k], 0)}%`).join(", ")}">${SIZE_PARTS.map((p, k) => `<span style="width:${pct[k].toFixed(1)}%;background:${p[2]}"></span>`).join("")}</div>
+    <div class="mix-key num">${SIZE_PARTS.map((p, k) => `<span><i style="background:${p[2]}"></i>${p[1]} ${fmt(pct[k], 0)}%</span>`).join("")}</div>
+    <p class="context num">${normal}</p>
+    <div class="foot"><span>${fmtDate(day)}</span><span>Share of chlorophyll</span></div>
+  </button>`;
 }
 
 function doyOf(dateStr){ const d = new Date(dateStr+"T00:00:00Z"); const s = Date.UTC(d.getUTCFullYear(),0,1); return Math.min(365, Math.floor((d - s)/864e5) + 1); }
@@ -410,27 +612,39 @@ function niceTicks(lo, hi, n){
   return {ticks:t, step};
 }
 
-let current = null; // {series, cfg}
+let current = null; // {series, cfg, loc, choice}
+const got_choice = () => current && current.choice;
 async function renderChart(){
-  const cfg = VARS.find(c => c.v === state.variable) || VARS[0];
+  const cfg = CHART_VARS.find(c => c.v === state.variable) || CHART_VARS[0];
   const loc = locFor(cfg);
   $("chart-name").textContent = `${cfg.title} · ${whereFor(cfg)}`;
   const svg = $("chart"); svg.innerHTML = "";
-  let series;
-  try { series = await getJSON(`daily/${cfg.v}__${loc}.json`); }
+  let series, got;
+  try { got = await getSeries(cfg, loc); series = got.series; }
   catch(e){
+    $("source-label").hidden = true;
     $("chart-sub").textContent = ""; $("legend").innerHTML = ""; $("stats").innerHTML = "";
     el("text", {x:480, y:200, "text-anchor":"middle", fill:"#6B7F87", "font-size":16}, svg).textContent = "No data has been published for this measurement and area yet.";
     current = null; return;
   }
-  current = {series, cfg, loc};
+  current = {series, cfg, loc, choice: got.choice};
+  const opts = got.combined.source_options || [];
+  const ss = $("source-select");
+  $("source-label").hidden = opts.length < 2;
+  if (opts.length >= 2){
+    const yr = o => `${o.first.slice(0,4)}–${o.last.slice(0,4)}`;
+    ss.innerHTML = `<option value="">Combined (best available)</option>` +
+      opts.map(o => `<option value="${esc(o.source)}">${esc(o.label)} (${yr(o)})</option>`).join("");
+    ss.value = got.choice ? got.choice.source : "";
+  }
   const years = [...new Set(series.data.map(r => r[0].slice(0,4)))].sort().reverse();
   const ys = $("year-select");
   if (!state.year || !years.includes(state.year)) state.year = years[0];
   ys.innerHTML = years.map(y => `<option value="${y}" ${y===state.year?"selected":""}>${y}</option>`).join("");
   $("year-label").hidden = state.mode !== "season";
-  const unit = series.unit ? series.unit.replace("degC","°C").replace("m-3","m⁻³").replace("m-1","m⁻¹").replace("m-2","m⁻²").replace("day-1","day⁻¹").replace("s-1","s⁻¹") : "";
-  $("chart-sub").textContent = `${series.name} (${unit}) · record ${series.record.first.slice(0,4)}–${series.record.last.slice(0,4)}`;
+  const unit = series.unit ? series.unit.replace("degC","°C").replace("uatm","µatm").replace("m-3","m⁻³").replace("m-1","m⁻¹").replace("m-2","m⁻²").replace("day-1","day⁻¹").replace("s-1","s⁻¹") : "";
+  const used = (series.source_labels || series.sources).join(", ");
+  $("chart-sub").textContent = `${series.name}${unit && unit !== "1" ? ` (${unit})` : ""} · ${series.record.first.slice(0,4)}–${series.record.last.slice(0,4)} · ${got.choice ? "Source" : "Sources"}: ${used}`;
   renderStats(series, cfg);
   if (state.mode === "season") drawSeason(svg, series, cfg); else drawRecord(svg, series, cfg);
 }
@@ -494,6 +708,16 @@ function drawSeason(svg, series, cfg){
       const s = t.toISOString().slice(0,10); if (s.startsWith(yr)) dustDays.push(doyOf(s));
     }
   });
+  const heat = cfg.v === "sst" && mhw && mhw[current.loc] && !got_choice() ? mhw[current.loc] : null;
+  const heatDays = [];
+  if (heat){
+    heat.events.forEach(ev => {
+      for (let t = new Date(ev.start+"T00:00:00Z"); t <= new Date(ev.end+"T00:00:00Z"); t = new Date(t.getTime()+864e5)){
+        const s2 = t.toISOString().slice(0,10); if (s2.startsWith(yr)) heatDays.push(doyOf(s2));
+      }
+    });
+    heatDays.forEach(d => el("rect", {x:x(d)-1.4, y:f.M.t, width:2.8, height:f.ih, fill:"#F6D5CA"}, svg));
+  }
   dustDays.forEach(d => el("rect", {x:x(d)-2, y:f.M.t, width:4, height:f.ih, fill:"#B7791F", opacity:0.09}, svg));
   dustDays.forEach(d => el("path", {d:`M${x(d)-5},${f.M.t-10}L${x(d)+5},${f.M.t-10}L${x(d)},${f.M.t-2}Z`, fill:"#B7791F"}, svg));
   const items = [];
@@ -505,6 +729,11 @@ function drawSeason(svg, series, cfg){
     el("path", {d:lineOf(c.max), fill:"none", stroke:"#7F97A0", "stroke-width":1, "stroke-dasharray":"5 4"}, svg);
     el("path", {d:lineOf(c.min), fill:"none", stroke:"#7F97A0", "stroke-width":1, "stroke-dasharray":"5 4"}, svg);
     el("path", {d:lineOf(c.mean), fill:"none", stroke:"#545454", "stroke-width":1.5}, svg);
+    if (heat){
+      // heatwave threshold on the 366-day calendar, drawn on our 365-day axis
+      const th = heat.thresh.filter((_, k) => k !== 59).map((v, k) => [k + 1, v]);
+      el("path", {d:pathFrom(th, x, f.y, 1), fill:"none", stroke:"#C0502E", "stroke-width":1.5, "stroke-dasharray":"2 3"}, svg);
+    }
     const lastIdx = (a) => { for (let i = 364; i >= 0; i--) if (a[i] != null) return i; return -1; };
     const iMax = lastIdx(c.max), iMin = lastIdx(c.min), iMean = lastIdx(c.mean);
     const labels = [[c.max[iMax], "Highest", "#5F7880"], [c.mean[iMean], "Average", "#3F4B50"], [c.min[iMin], "Lowest", "#5F7880"]];
@@ -512,8 +741,9 @@ function drawSeason(svg, series, cfg){
     const placed = [];
     labels.sort((a,b) => b[0]-a[0]).forEach(l => { let yy = f.y(l[0]); placed.forEach(p => { if (Math.abs(p - yy) < 15) yy = p + 15; }); placed.push(yy); el("text", {x:f.M.l+f.iw+8, y:yy+4, fill:l[2], "font-size":12}, svg).textContent = l[1]; });
     items.push(["band","","Average ±1 standard deviation"],["","border-color:#545454","Average"],["dash","","Highest and lowest for the time of year"]);
+    if (heat) items.push(["dot","",`Marine heatwave level (90th percentile, ${heat.baseline[0]}–${heat.baseline[1]})`]);
   }
-  const gap = cfg.v === "chl" || cfg.v === "kd490" ? 6 : 2;
+  const gap = cfg.sat ? 6 : 2;
   el("path", {d:pathFrom(pts, x, f.y, gap), fill:"none", stroke:"#0074A6", "stroke-width":2, "stroke-linejoin":"round"}, svg);
   if (gap > 2) pts.forEach(p => el("circle", {cx:x(p[0]), cy:f.y(p[1]), r:2.2, fill:"#0074A6"}, svg));
   if (pts.length){
@@ -521,6 +751,7 @@ function drawSeason(svg, series, cfg){
     el("circle", {cx:x(lp[0]), cy:f.y(lp[1]), r:4.5, fill:"#0074A6", stroke:"#fff", "stroke-width":2}, svg);
   }
   items.unshift(["","border-color:#0074A6", yr]);
+  if (heatDays.length) items.push(["heat","","Marine heatwave day"]);
   if (dustDays.length) items.push(["tri","","Saharan dust day"]);
   legend(items);
   hover(svg, f, (px) => {
@@ -533,6 +764,8 @@ function drawSeason(svg, series, cfg){
     if (day) rows.push([yr, fmt(day[1], cfg.dp)]);
     else rows.push([yr, "no data"]);
     if (c && c.mean[i] != null){ rows.push(["Average", fmt(c.mean[i], cfg.dp)]); if (c.sd[i] != null) rows.push(["±1 SD", `${fmt(Math.max(cfg.floor0?0:-Infinity, c.mean[i]-c.sd[i]), cfg.dp)} – ${fmt(c.mean[i]+c.sd[i], cfg.dp)}`]); if (c.min[i] != null) rows.push(["Range", `${fmt(c.min[i], cfg.dp)} – ${fmt(c.max[i], cfg.dp)}`]); }
+    if (heat){ const k = (i + 1) >= 60 ? i + 1 : i; rows.push(["Heatwave level", fmt(heat.thresh[k], cfg.dp)]); }
+    if (heatDays.includes(i+1)) rows.push(["", "Marine heatwave"]);
     if (dustDays.includes(i+1)) rows.push(["", "Saharan dust day"]);
     const date = day ? fmtDate(day[2]) : new Date(Date.UTC(+yr,0,i+1)).toLocaleDateString("en-GB",{day:"numeric",month:"long",timeZone:"UTC"});
     return {x:x(i+1), y: day ? f.y(day[1]) : null, title: date, rows};
@@ -554,6 +787,12 @@ function drawRecord(svg, series, cfg){
     el("line", {x1:x(t), x2:x(t), y1:f.M.t+f.ih, y2:f.M.t+f.ih+5, stroke:"#C5D6DD"}, svg);
     el("text", {x:x(t), y:f.H-12, "text-anchor":"middle", fill:"#6B7F87", "font-size":12}, svg).textContent = yy;
   }
+  const heat = cfg.v === "sst" && mhw && mhw[current.loc] && !got_choice() ? mhw[current.loc] : null;
+  if (heat) heat.events.forEach(ev => {
+    const a = Date.parse(ev.start+"T00:00:00Z"), b = Date.parse(ev.end+"T00:00:00Z") + 864e5;
+    if (b < t0 || a > t1) return;
+    el("rect", {x:x(Math.max(a, t0)), y:f.M.t, width:Math.max(1.2, x(Math.min(b, t1)) - x(Math.max(a, t0))), height:f.ih, fill:"#F6D5CA"}, svg);
+  });
   // ±1 SD band, then limits
   el("rect", {x:f.M.l, y:f.y(r.mean + r.sd), width:f.iw, height:Math.max(0, f.y(Math.max(cfg.floor0?0:-Infinity, r.mean - r.sd)) - f.y(r.mean + r.sd)), fill:"#CFE7F2"}, svg);
   // daily values (thin), then a 30-day running mean to show the pattern
@@ -567,14 +806,17 @@ function drawRecord(svg, series, cfg){
   const labels = [[r.max, `Max ${fmt(r.max, cfg.dp)}`, "#5F7880"],[r.mean + r.sd, `+1 SD ${fmt(r.mean + r.sd, cfg.dp)}`, "#5F7880"],[r.mean, `Mean ${fmt(r.mean, cfg.dp)}`, "#3F4B50"],[r.mean - r.sd, `−1 SD ${fmt(r.mean - r.sd, cfg.dp)}`, "#5F7880"],[r.min, `Min ${fmt(r.min, cfg.dp)}`, "#5F7880"]];
   const placed = [];
   labels.forEach(l => { if (cfg.floor0 && l[0] < 0) return; let yy = f.y(l[0]); placed.forEach(p => { if (Math.abs(p - yy) < 15) yy = p + 15; }); placed.push(yy); el("text", {x:f.M.l+f.iw+8, y:yy+4, fill:l[2], "font-size":12, class:"num"}, svg).textContent = l[1]; });
-  legend([["","border-color:#8CC3DC","Daily values"],["","border-color:#0074A6","30-day running average"],["band","","Record mean ±1 standard deviation"],["","border-color:#545454","Record mean"],["dash","","Record highest and lowest"]]);
+  legend([["","border-color:#8CC3DC","Daily values"],["","border-color:#0074A6","30-day running average"],["band","","Record mean ±1 standard deviation"],["","border-color:#545454","Record mean"],["dash","","Record highest and lowest"]].concat(heat && heat.events.length ? [["heat","",`Marine heatwaves (${heat.events.length})`]] : []));
   hover(svg, f, px => {
     const t = t0 + (px - f.M.l) / f.iw * (t1 - t0);
     let lo2 = 0, hi2 = rows.length - 1;
     while (hi2 - lo2 > 1){ const mid = (lo2 + hi2) >> 1; if (rows[mid][0] < t) lo2 = mid; else hi2 = mid; }
     const p = Math.abs(rows[lo2][0]-t) < Math.abs(rows[hi2][0]-t) ? rows[lo2] : rows[hi2];
     const s = smooth[rows.indexOf(p)];
-    return {x:x(p[0]), y:f.y(p[1]), title:fmtDate(p[2]), rows:[["Value", fmt(p[1], cfg.dp)],["30-day average", fmt(s[1], cfg.dp)],["Record mean", fmt(r.mean, cfg.dp)]]};
+    const out = [["Value", fmt(p[1], cfg.dp)],["30-day average", fmt(s[1], cfg.dp)],["Record mean", fmt(r.mean, cfg.dp)]];
+    const ev = heat && heat.events.find(e => p[2] >= e.start && p[2] <= e.end);
+    if (ev) out.push(["Heatwave", `${ev.category_name}, ${ev.days} days`]);
+    return {x:x(p[0]), y:f.y(p[1]), title:fmtDate(p[2]), rows:out};
   });
 }
 
@@ -642,7 +884,7 @@ function renderDust(){
 /* ---------------- sources ---------------- */
 function renderSources(){
   const lines = [
-    "Generated using E.U. Copernicus Marine Service information: Mediterranean ocean colour, sea surface temperature and wave products.",
+    "Generated using E.U. Copernicus Marine Service information: Mediterranean ocean colour (including OLCI 300 m, plankton functional types, optics and primary production), sea surface temperature, wave, physics and biogeochemistry products.",
     "NASA Ocean Biology Processing Group (OB.DAAC): SeaWiFS, MODIS-Aqua and PACE photosynthetically available radiation.",
     "ERA5 reanalysis from the Copernicus Climate Change Service, and CAMS atmospheric composition data, both via Open-Meteo.com (CC BY 4.0).",
     "Copernicus Atmosphere Monitoring Service (CAMS) global reanalysis (EAC4).",
@@ -662,7 +904,7 @@ function downloadCSV(){
   const blob = new Blob([header + body], {type:"text/csv"});
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `tnp_${series.variable}_${series.location}.csv`;
+  a.download = `tnp_${series.variable}_${series.location}${series.sources.length === 1 ? "_" + series.sources[0] : ""}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
@@ -672,11 +914,20 @@ async function boot(){
   if (SAMPLE) $("sample").hidden = false;
   renderAreas();
   const vs = $("var-select");
-  vs.innerHTML = VARS.map(c => `<option value="${c.v}">${c.title}</option>`).join("");
-  if (!VARS.some(c => c.v === state.variable)) state.variable = "sst";
+  vs.innerHTML = GROUPS.map(([code, name]) => `<optgroup label="${name}">` +
+    CHART_VARS.filter(c => c.g === code).map(c => `<option value="${c.v}">${esc(c.title)}${c.model ? " (model)" : ""}</option>`).join("") + `</optgroup>`).join("");
+  if (!CHART_VARS.some(c => c.v === state.variable)) state.variable = "sst";
+  if (!GROUPS.some(g => g[0] === state.group)) state.group = "physical";
+  renderTabs();
   vs.value = state.variable;
   vs.addEventListener("change", () => { state.variable = vs.value; store.set("variable", vs.value); document.querySelectorAll(".card").forEach(x => x.setAttribute("aria-current", String(x.dataset.var === vs.value))); renderChart(); });
   $("year-select").addEventListener("change", e => { state.year = e.target.value; renderChart(); });
+  $("source-select").addEventListener("change", e => {
+    if (e.target.value) state.src[state.variable] = e.target.value; else delete state.src[state.variable];
+    store.set("sources", JSON.stringify(state.src));
+    state.year = null;
+    renderChart(); renderCards();
+  });
   $("mode-season").addEventListener("click", () => { state.mode = "season"; $("mode-season").setAttribute("aria-pressed","true"); $("mode-record").setAttribute("aria-pressed","false"); renderChart(); });
   $("mode-record").addEventListener("click", () => { state.mode = "record"; $("mode-record").setAttribute("aria-pressed","true"); $("mode-season").setAttribute("aria-pressed","false"); renderChart(); });
   $("download").addEventListener("click", downloadCSV);
@@ -684,6 +935,7 @@ async function boot(){
   try {
     [meta, latest] = await Promise.all([getJSON("meta.json"), getJSON("latest.json")]);
     try { dust = await getJSON("dust_events.json"); } catch(e){ dust = null; }
+    try { mhw = await getJSON("marine_heatwaves.json"); } catch(e){ mhw = null; }
   } catch(e){
     $("cards").innerHTML = `<div class="error">The data files couldn't be loaded (${esc(e.message)}). They are published after each morning's harvest; please try again later.</div>`;
     $("updated").textContent = "";
