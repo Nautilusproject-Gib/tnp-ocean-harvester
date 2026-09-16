@@ -10,7 +10,7 @@ from datetime import date, datetime
 import numpy as np
 
 from ..db import Observation
-from ..stats import area_stats
+from ..stats import area_stats, mask_valid
 from .base import Source
 
 _logged_in = False
@@ -73,6 +73,7 @@ class NasaL3m(Source):
                 block = ds[var].isel(lat=slice(iy.min(), iy.max() + 1),
                                      lon=slice(ix.min(), ix.max() + 1)).load()
                 blat, blon, vals = block["lat"].values, block["lon"].values, block.values.astype("float64")
+                vals = mask_valid(vals, self.config.get("variables", {}).get(code, {}).get("valid_range"))
             for acode, area in self.areas().items():
                 a_lon_min, a_lat_min, a_lon_max, a_lat_max = area["bbox"]
                 jy = np.where((blat >= a_lat_min) & (blat <= a_lat_max))[0]
