@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: "One source code from config.yaml (blank = all)"
+        description: "Source code(s) from config.yaml, separated by spaces or commas (blank = all)"
         required: false
         default: ""
       start:
@@ -65,7 +65,7 @@ jobs:
           IN_MAX: ${{ github.event.inputs.max_minutes || '300' }}
         run: |
           ARGS="--max-minutes $IN_MAX"
-          if [ -n "$IN_SOURCE" ]; then ARGS="$ARGS --source $IN_SOURCE"; fi
+          for S in ${IN_SOURCE//,/ }; do ARGS="$ARGS --source $S"; done
           if [ -n "$IN_START" ]; then ARGS="$ARGS --start $IN_START"; fi
           python harvest.py backfill $ARGS
 
