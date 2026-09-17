@@ -34,6 +34,10 @@ points:
     name: Gibraltar Airport (LXGB)
     lat: 36.151
     lon: -5.349
+  algeciras_gauge:
+    name: Algeciras tide gauge
+    lat: 36.12
+    lon: -5.43
   aeronet_malaga:            # location code used automatically for AERONET site "Malaga"
     name: AERONET Malaga
     lat: 36.715
@@ -143,7 +147,7 @@ sources:
     earliest: "2021-11-30"
     chunk_days: 180
     lookback_days: 3
-    include_forecast_days: 0          # set >0 to also store forecast hours
+    forecast_days: 5                  # also store the days ahead; published as a forecast
 
   # ---- Copernicus Marine: more satellite ocean colour (same login) ----
   cmems_med_pft_my:
@@ -299,6 +303,7 @@ sources:
     earliest: "2023-11-01"
     chunk_days: 180
     lookback_days: 10
+    forecast_days: 5
 
   cmems_med_sal_my:
     label: Copernicus physics reanalysis
@@ -324,6 +329,61 @@ sources:
     max_depth: 1.5
     earliest: "2023-11-01"
     chunk_days: 180
+    lookback_days: 10
+
+  cmems_med_temp_my:
+    label: Copernicus physics reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics reanalysis 4.2 km, daily temperature from the surface to 100 m
+    dataset_id: cmems_mod_med_phy-temp_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_PHY_006_004
+    variables: &temp_vars
+      thetao: {code: temp, surface_code: temp_surface, depths: [10, 20, 30, 50, 100]}
+    max_depth: 110
+    earliest: "1987-01-01"
+    chunk_days: 180
+    lookback_days: 10
+
+  cmems_med_temp_anfc:
+    label: Copernicus physics analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics analysis and forecast 4.2 km, daily temperature from the surface to 100 m
+    dataset_id: cmems_mod_med_phy-tem_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_PHY_006_013
+    variables: *temp_vars
+    max_depth: 110
+    earliest: "2023-11-01"
+    chunk_days: 120
+    lookback_days: 10
+    forecast_days: 5
+
+  cmems_med_salprof_my:
+    label: Copernicus physics reanalysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics reanalysis 4.2 km, daily salinity to 350 m and the Atlantic-Mediterranean interface depth
+    dataset_id: cmems_mod_med_phy-sal_my_4.2km_P1D-m
+    product: MEDSEA_MULTIYEAR_PHY_006_004
+    variables: &salprof_vars
+      so: {code: salinity, depths: [50, 100, 200], interface: {code: interface_depth, value: 37.5}}
+    max_depth: 350
+    earliest: "1987-01-01"
+    chunk_days: 120
+    lookback_days: 10
+
+  cmems_med_salprof_anfc:
+    label: Copernicus physics analysis
+    enabled: true
+    type: copernicus_grid
+    description: Mediterranean physics analysis and forecast 4.2 km, daily salinity to 350 m and the Atlantic-Mediterranean interface depth
+    dataset_id: cmems_mod_med_phy-sal_anfc_4.2km_P1D-m
+    product: MEDSEA_ANALYSISFORECAST_PHY_006_013
+    variables: *salprof_vars
+    max_depth: 350
+    earliest: "2023-11-01"
+    chunk_days: 90
     lookback_days: 10
 
   cmems_med_mld_my:
@@ -566,6 +626,38 @@ sources:
     chunk_days: 90
     lookback_days: 5
 
+  openmeteo_forecast:
+    label: Open-Meteo forecast
+    enabled: true
+    type: openmeteo_forecast
+    description: Weather forecast models via Open-Meteo, hourly wind, gusts, rain and air temperature for the last week and the week ahead
+    points: [gibraltar_airport]
+    variables:
+      wind_speed_10m: wind_speed
+      wind_direction_10m: wind_dir
+      wind_gusts_10m: wind_gust
+      precipitation: precip
+      temperature_2m: air_temp
+    past_days: 7                     # fills the few days ERA5 lags behind
+    forecast_days: 7
+    rolling_window_days: 7
+    lookback_days: 7
+    chunk_days: 60
+
+  # ---------------- Tide gauge (no account) ----------------
+  ioc_alge:
+    label: Algeciras tide gauge (IOC)
+    enabled: true
+    type: ioc_sealevel
+    description: IOC Sea Level Station Monitoring Facility, Algeciras radar tide gauge, minute data averaged to hourly
+    station: alge
+    point: algeciras_gauge
+    sensors: [rad, prs, flt, enc, pr1, bub]
+    earliest: "2009-01-01"
+    chunk_days: 91
+    request_days: 7
+    lookback_days: 3
+
   # ---------------- CAMS reanalysis (free ADS account) ----------------
   cams_eac4_dust:
     label: CAMS reanalysis (EAC4)
@@ -597,62 +689,80 @@ sources:
 # daily_statistic: which area statistic the dashboard uses (median resists stray coastal pixels).
 variables:
   # ---- physical ----
-  sst:          {group: physical, name: Sea surface temperature (foundation), unit: degC, valid_range: [5, 35]}
-  par:          {group: physical, name: Photosynthetically available radiation, unit: einstein m-2 day-1, valid_range: [0, 130]}
-  kd490:        {group: physical, name: Diffuse attenuation at 490 nm, unit: m-1, valid_range: [0.01, 6], daily_statistic: median}
-  current_speed: {group: physical, name: Surface current speed (model), unit: m s-1, valid_range: [0, 5]}
-  current_dir:  {group: physical, name: Surface current direction (towards), unit: deg}
-  salinity:     {group: physical, name: Sea surface salinity (model), unit: PSU, valid_range: [30, 40]}
-  mld:          {group: physical, name: Mixed layer depth (model), unit: m, valid_range: [0, 1000]}
-  wave_hs:      {group: physical, name: Significant wave height, unit: m, valid_range: [0, 20]}
-  wave_dir:     {group: physical, name: Mean wave direction (from), unit: deg}
-  wave_tm10:    {group: physical, name: Mean wave period Tm-10, unit: s, valid_range: [0, 30]}
-  wave_tp:      {group: physical, name: Peak wave period, unit: s, valid_range: [0, 30]}
-  wind_speed:   {group: physical, name: Wind speed at 10 m, unit: m s-1, valid_range: [0, 75]}
-  wind_dir:     {group: physical, name: Wind direction (from), unit: deg}
-  wind_gust:    {group: physical, name: Wind gust, unit: m s-1}
-  precip:       {group: physical, name: Precipitation, unit: mm}
-  precip_1h:    {group: physical, name: Precipitation (station, 1 h), unit: mm}
-  precip_3h:    {group: physical, name: Precipitation (station, 3 h), unit: mm}
-  precip_6h:    {group: physical, name: Precipitation (station, 6 h), unit: mm}
-  precip_12h:   {group: physical, name: Precipitation (station, 12 h), unit: mm}
-  precip_24h:   {group: physical, name: Precipitation (station, 24 h), unit: mm}
-  slp:          {group: physical, name: Sea level pressure, unit: hPa}
-  air_temp:     {group: physical, name: Air temperature, unit: degC}
-  sw_rad:       {group: physical, name: Incoming shortwave radiation (ERA5), unit: W m-2}
-  par_era5:     {group: physical, name: PAR estimated from ERA5 shortwave radiation, unit: einstein m-2 day-1}
-  bbp443:       {group: physical, name: Particle backscattering at 443 nm, unit: m-1, valid_range: [0, 1], daily_statistic: median}
+  sst:          {group: physical, name: "Sea surface temperature (foundation)", unit: degC, valid_range: [5, 35]}
+  par:          {group: physical, name: "Photosynthetically available radiation", unit: einstein m-2 day-1, valid_range: [0, 130]}
+  kd490:        {group: physical, name: "Diffuse attenuation at 490 nm", unit: m-1, valid_range: [0.01, 6], daily_statistic: median}
+  current_speed: {group: physical, name: "Surface current speed (model)", unit: m s-1, valid_range: [0, 5]}
+  current_dir:  {group: physical, name: "Surface current direction (towards)", unit: deg}
+  salinity:     {group: physical, name: "Sea surface salinity (model)", unit: PSU, valid_range: [30, 40]}
+  salinity_50m: {group: physical, name: "Salinity at 50 m (model)", unit: PSU, valid_range: [30, 40]}
+  salinity_100m: {group: physical, name: "Salinity at 100 m (model)", unit: PSU, valid_range: [30, 40]}
+  salinity_200m: {group: physical, name: "Salinity at 200 m (model)", unit: PSU, valid_range: [30, 40]}
+  interface_depth: {group: physical, name: "Depth of the Atlantic-Mediterranean interface (37.5 isohaline, model)", unit: m, valid_range: [0, 400]}
+  temp_surface: {group: physical, name: "Sea temperature at the surface (model)", unit: degC, valid_range: [5, 35]}
+  temp_10m:     {group: physical, name: "Sea temperature at 10 m (model)", unit: degC, valid_range: [5, 35]}
+  temp_20m:     {group: physical, name: "Sea temperature at 20 m (model)", unit: degC, valid_range: [5, 35]}
+  temp_30m:     {group: physical, name: "Sea temperature at 30 m (model)", unit: degC, valid_range: [5, 35]}
+  temp_50m:     {group: physical, name: "Sea temperature at 50 m (model)", unit: degC, valid_range: [5, 35]}
+  temp_100m:    {group: physical, name: "Sea temperature at 100 m (model)", unit: degC, valid_range: [5, 35]}
+  upwelling_index: {group: physical, name: "Upwelling index (offshore Ekman transport, NW Alboran coast)", unit: m3 s-1 km-1}
+  par_5m:       {group: physical, name: "Light (PAR) reaching 5 m", unit: einstein m-2 day-1, valid_range: [0, 130]}
+  par_10m:      {group: physical, name: "Light (PAR) reaching 10 m", unit: einstein m-2 day-1, valid_range: [0, 130]}
+  par_15m:      {group: physical, name: "Light (PAR) reaching 15 m", unit: einstein m-2 day-1, valid_range: [0, 130]}
+  par_20m:      {group: physical, name: "Light (PAR) reaching 20 m", unit: einstein m-2 day-1, valid_range: [0, 130]}
+  sea_level_hourly: {group: physical, name: "Sea level (hourly, gauge datum)", unit: m}
+  sea_level:    {group: physical, name: "Daily mean sea level (gauge datum)", unit: m}
+  surge:        {group: physical, name: "Surge (sea level minus predicted tide)", unit: m, valid_range: [-1.5, 1.5]}
+  mld:          {group: physical, name: "Mixed layer depth (model)", unit: m, valid_range: [0, 1000]}
+  wave_hs:      {group: physical, name: "Significant wave height", unit: m, valid_range: [0, 20]}
+  wave_dir:     {group: physical, name: "Mean wave direction (from)", unit: deg}
+  wave_tm10:    {group: physical, name: "Mean wave period Tm-10", unit: s, valid_range: [0, 30]}
+  wave_tp:      {group: physical, name: "Peak wave period", unit: s, valid_range: [0, 30]}
+  wind_speed:   {group: physical, name: "Wind speed at 10 m", unit: m s-1, valid_range: [0, 75]}
+  wind_dir:     {group: physical, name: "Wind direction (from)", unit: deg}
+  wind_gust:    {group: physical, name: "Wind gust", unit: m s-1}
+  precip:       {group: physical, name: "Precipitation", unit: mm}
+  precip_1h:    {group: physical, name: "Precipitation (station, 1 h)", unit: mm}
+  precip_3h:    {group: physical, name: "Precipitation (station, 3 h)", unit: mm}
+  precip_6h:    {group: physical, name: "Precipitation (station, 6 h)", unit: mm}
+  precip_12h:   {group: physical, name: "Precipitation (station, 12 h)", unit: mm}
+  precip_24h:   {group: physical, name: "Precipitation (station, 24 h)", unit: mm}
+  slp:          {group: physical, name: "Sea level pressure", unit: hPa}
+  air_temp:     {group: physical, name: "Air temperature", unit: degC}
+  sw_rad:       {group: physical, name: "Incoming shortwave radiation (ERA5)", unit: W m-2}
+  par_era5:     {group: physical, name: "PAR estimated from ERA5 shortwave radiation", unit: einstein m-2 day-1}
+  bbp443:       {group: physical, name: "Particle backscattering at 443 nm", unit: m-1, valid_range: [0, 1], daily_statistic: median}
   # ---- chemical ----
-  dust_sfc:     {group: chemical, name: Surface dust concentration (CAMS), unit: ug m-3, valid_range: [0, 20000]}
-  aod_550:      {group: chemical, name: Aerosol optical depth 550 nm, unit: "1"}
-  dust_aod_550: {group: chemical, name: Dust aerosol optical depth 550 nm, unit: "1"}
-  pm10_model:   {group: chemical, name: PM10 (CAMS model), unit: ug m-3}
-  aeronet_aod_500: {group: chemical, name: AERONET aerosol optical depth 500 nm, unit: "1"}
-  aeronet_ae_440_870: {group: chemical, name: AERONET Angstrom exponent 440-870 nm, unit: "1"}
-  nitrate:      {group: chemical, name: Nitrate (model), unit: mmol m-3, valid_range: [0, 50]}
-  phosphate:    {group: chemical, name: Phosphate (model), unit: mmol m-3, valid_range: [0, 5]}
-  ammonium:     {group: chemical, name: Ammonium (model), unit: mmol m-3, valid_range: [0, 20]}
-  oxygen:       {group: chemical, name: Dissolved oxygen (model), unit: mmol m-3, valid_range: [100, 450]}
-  ph:           {group: chemical, name: pH (model), unit: "1", valid_range: [7.5, 8.6]}
-  dic:          {group: chemical, name: Dissolved inorganic carbon (model), unit: mmol m-3, valid_range: [1500, 3000]}
-  alkalinity:   {group: chemical, name: Total alkalinity (model), unit: mmol m-3, valid_range: [1800, 3000]}
-  pco2:         {group: chemical, name: Surface partial pressure of CO2 (model), unit: uatm, valid_range: [100, 1000]}
-  cdom_adg443:  {group: chemical, name: Absorption by dissolved organic matter and detritus at 443 nm, unit: m-1, valid_range: [0, 5], daily_statistic: median}
+  dust_sfc:     {group: chemical, name: "Surface dust concentration (CAMS)", unit: ug m-3, valid_range: [0, 20000]}
+  aod_550:      {group: chemical, name: "Aerosol optical depth 550 nm", unit: "1"}
+  dust_aod_550: {group: chemical, name: "Dust aerosol optical depth 550 nm", unit: "1"}
+  pm10_model:   {group: chemical, name: "PM10 (CAMS model)", unit: ug m-3}
+  aeronet_aod_500: {group: chemical, name: "AERONET aerosol optical depth 500 nm", unit: "1"}
+  aeronet_ae_440_870: {group: chemical, name: "AERONET Angstrom exponent 440-870 nm", unit: "1"}
+  nitrate:      {group: chemical, name: "Nitrate (model)", unit: mmol m-3, valid_range: [0, 50]}
+  phosphate:    {group: chemical, name: "Phosphate (model)", unit: mmol m-3, valid_range: [0, 5]}
+  ammonium:     {group: chemical, name: "Ammonium (model)", unit: mmol m-3, valid_range: [0, 20]}
+  oxygen:       {group: chemical, name: "Dissolved oxygen (model)", unit: mmol m-3, valid_range: [100, 450]}
+  ph:           {group: chemical, name: "pH (model)", unit: "1", valid_range: [7.5, 8.6]}
+  dic:          {group: chemical, name: "Dissolved inorganic carbon (model)", unit: mmol m-3, valid_range: [1500, 3000]}
+  alkalinity:   {group: chemical, name: "Total alkalinity (model)", unit: mmol m-3, valid_range: [1800, 3000]}
+  pco2:         {group: chemical, name: "Surface partial pressure of CO2 (model)", unit: uatm, valid_range: [100, 1000]}
+  cdom_adg443:  {group: chemical, name: "Absorption by dissolved organic matter and detritus at 443 nm", unit: m-1, valid_range: [0, 5], daily_statistic: median}
   # ---- biological ----
-  chl:          {group: biological, name: Chlorophyll-a, unit: mg m-3, valid_range: [0.01, 100], daily_statistic: median}
-  diatoms:      {group: biological, name: Diatoms (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  dinoflagellates: {group: biological, name: Dinoflagellates (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  haptophytes:  {group: biological, name: Haptophytes (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  cryptophytes: {group: biological, name: Cryptophytes (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  green_algae:  {group: biological, name: Green algae and prochlorophytes (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  prokaryotes:  {group: biological, name: Prokaryotes (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  micro_phyto:  {group: biological, name: Microphytoplankton (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  nano_phyto:   {group: biological, name: Nanophytoplankton (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  pico_phyto:   {group: biological, name: Picophytoplankton (as chlorophyll), unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
-  pp_sat:       {group: biological, name: Primary production, water column (satellite), unit: g C m-2 day-1, valid_range: [0, 20], daily_statistic: median}
-  npp_model:    {group: biological, name: Net primary production at the surface (model), unit: mg C m-3 day-1, valid_range: [0, 500]}
-  phyto_carbon: {group: biological, name: Phytoplankton carbon (model), unit: mmol C m-3, valid_range: [0, 50]}
-  zoo_carbon:   {group: biological, name: Zooplankton carbon (model), unit: mmol C m-3, valid_range: [0, 50]}
+  chl:          {group: biological, name: "Chlorophyll-a", unit: mg m-3, valid_range: [0.01, 100], daily_statistic: median}
+  diatoms:      {group: biological, name: "Diatoms (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  dinoflagellates: {group: biological, name: "Dinoflagellates (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  haptophytes:  {group: biological, name: "Haptophytes (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  cryptophytes: {group: biological, name: "Cryptophytes (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  green_algae:  {group: biological, name: "Green algae and prochlorophytes (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  prokaryotes:  {group: biological, name: "Prokaryotes (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  micro_phyto:  {group: biological, name: "Microphytoplankton (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  nano_phyto:   {group: biological, name: "Nanophytoplankton (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  pico_phyto:   {group: biological, name: "Picophytoplankton (as chlorophyll)", unit: mg m-3, valid_range: [0, 100], daily_statistic: median}
+  pp_sat:       {group: biological, name: "Primary production, water column (satellite)", unit: g C m-2 day-1, valid_range: [0, 20], daily_statistic: median}
+  npp_model:    {group: biological, name: "Net primary production at the surface (model)", unit: mg C m-3 day-1, valid_range: [0, 500]}
+  phyto_carbon: {group: biological, name: "Phytoplankton carbon (model)", unit: mmol C m-3, valid_range: [0, 50]}
+  zoo_carbon:   {group: biological, name: "Zooplankton carbon (model)", unit: mmol C m-3, valid_range: [0, 50]}
 
 # Order of preference when the dashboard export merges overlapping sources
 export:
@@ -676,6 +786,48 @@ export:
     baseline: [1991, 2020]         # 30-year reference period (uses all years if the record is shorter)
     min_days: 5
     max_gap_days: 2
+    extra_variables: [temp_10m, temp_30m, temp_50m]   # heatwaves below the surface, from the physics model
+
+  # Coastal upwelling on the Spanish Alboran coast: offshore Ekman transport from the wind.
+  upwelling:
+    wind: {location: gibraltar_airport, sources: [openmeteo_era5, openmeteo_forecast]}
+    coast_bearing: 70                # the coast runs towards ENE with the sea to the right
+    latitude: 36.5
+    threshold: 500                   # m3 s-1 per km of coast, about a steady 6 m/s westerly
+    min_days: 2
+    max_gap_days: 1
+    response_window_days: 7
+    response_lag_days: 3
+    response:
+      - {variable: sst, location: western_alboran}
+      - {variable: sst, location: gibraltar_20km}
+      - {variable: chl, location: western_alboran}
+      - {variable: nitrate, location: western_alboran}
+
+  # Light reaching the seabed at these depths, from satellite PAR and KD490 (Morel et al. 2007 KdPAR)
+  seabed_light:
+    depths: [5, 10, 15, 20]
+
+  # Chlorophyll blooms: 3+ days above the seasonal 90th percentile (cloud gaps up to 3 days bridged)
+  blooms:
+    variable: chl
+    locations: [gibraltar_20km, bay_of_gibraltar, gibraltar_eastside, strait_of_gibraltar, western_alboran]
+    percentile: 0.9
+    min_days: 3
+    max_gap_days: 2
+    interp_days: 3
+    min_clear_days: 2
+    trigger_lookback_days: 10
+
+  tides:
+    source: ioc_alge
+    location: algeciras_gauge
+    predict_days: 7
+
+  forecast:
+    bias_correct:
+      sst: {from: temp_surface, days: 14}    # model surface temperature forecast, matched to satellite SST
+
   daily_priority:
     chl: [cmems_med_chl_my, cmems_med_chl_nrt, cmems_med_chl_olci_my, cmems_med_chl_olci_nrt]
     kd490: [cmems_med_kd490_my, cmems_med_kd490_nrt, cmems_med_kd490_olci_my, cmems_med_kd490_olci_nrt]
@@ -686,10 +838,12 @@ export:
     wave_tp: [cmems_med_waves_my, cmems_med_waves_anfc]
     # ERA5 first for weather so the combined series is one consistent product;
     # the airport station can still be chosen on the dashboard.
-    wind_speed: [openmeteo_era5, ncei_isd_lxgb]
-    wind_gust: [openmeteo_era5, ncei_isd_lxgb]
-    precip: [openmeteo_era5]
-    air_temp: [openmeteo_era5, ncei_isd_lxgb]
+    wind_speed: [openmeteo_era5, ncei_isd_lxgb, openmeteo_forecast]
+    wind_dir: [openmeteo_era5, ncei_isd_lxgb, openmeteo_forecast]
+    wind_gust: [openmeteo_era5, ncei_isd_lxgb, openmeteo_forecast]
+    precip: [openmeteo_era5, openmeteo_forecast]
+    air_temp: [openmeteo_era5, ncei_isd_lxgb, openmeteo_forecast]
+    upwelling_index: [openmeteo_era5, openmeteo_forecast]
     dust_sfc: [openmeteo_cams_dust]
     dust_aod_550: [cams_eac4_dust]
     aod_550: [openmeteo_cams_dust, cams_eac4_dust]
@@ -721,3 +875,13 @@ export:
     alkalinity: [cmems_med_car_my, cmems_med_car_anfc]
     pco2: [cmems_med_co2_my, cmems_med_co2_anfc]
     phyto_carbon: [cmems_med_phyto_my, cmems_med_phyto_anfc]
+    temp_surface: [cmems_med_temp_my, cmems_med_temp_anfc]
+    temp_10m: [cmems_med_temp_my, cmems_med_temp_anfc]
+    temp_20m: [cmems_med_temp_my, cmems_med_temp_anfc]
+    temp_30m: [cmems_med_temp_my, cmems_med_temp_anfc]
+    temp_50m: [cmems_med_temp_my, cmems_med_temp_anfc]
+    temp_100m: [cmems_med_temp_my, cmems_med_temp_anfc]
+    salinity_50m: [cmems_med_salprof_my, cmems_med_salprof_anfc]
+    salinity_100m: [cmems_med_salprof_my, cmems_med_salprof_anfc]
+    salinity_200m: [cmems_med_salprof_my, cmems_med_salprof_anfc]
+    interface_depth: [cmems_med_salprof_my, cmems_med_salprof_anfc]
