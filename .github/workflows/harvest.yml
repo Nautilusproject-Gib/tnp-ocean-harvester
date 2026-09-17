@@ -2,7 +2,7 @@ name: Daily harvest
 
 on:
   schedule:
-    - cron: "30 6 * * *"
+    - cron: "7 3 * * *"
   workflow_dispatch:
     inputs:
       restore_key:
