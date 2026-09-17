@@ -383,11 +383,14 @@ class CopernicusTests(unittest.TestCase):
         self.assertEqual(obs["alkalinity"].n_valid, 0)        # 99 000 mmol m-3 is impossible, so masked
 
     def test_new_sources_are_consistent(self):
-        from harvester.sources.copernicus import variable_specs
+        from harvester.sources.copernicus import spec_codes, variable_specs
+        for v, meta in CONFIG["variables"].items():
+            self.assertLessEqual(set(meta), {"group", "name", "unit", "valid_range", "daily_statistic"},
+                                 f"{v}: stray keys (unquoted comma in the name?)")
         for code, cfg in CONFIG["sources"].items():
             if not cfg["type"].startswith("copernicus"):
                 continue
-            codes = [s["code"] for s in variable_specs(cfg)]
+            codes = [c for s in variable_specs(cfg) for c in spec_codes(s)]
             if cfg.get("derive") == "currents":
                 codes = ["current_speed", "current_dir"]
             for v in codes:
@@ -437,6 +440,201 @@ class MarineHeatwaveTests(unittest.TestCase):
         s2 = self._sst(years=range(2015, 2025))
         s2.iloc[-2:] += 2.5
         self.assertEqual(marine_heatwaves(s2)["status"]["state"], "warm")
+
+
+class DepthProfileTests(unittest.TestCase):
+    def _profile_ds(self, n_days=2):
+        import pandas as pd
+        lats = np.arange(35.80, 36.45, 0.042)
+        lons = np.arange(-5.80, -4.45, 0.042)
+        # model 'elevation' axis: negative, deepest first, as in the Copernicus Med datasets
+        elev = -np.array([300.0, 200.0, 150.0, 100.0, 50.0, 30.0, 19.7, 10.5, 1.0])
+        times = pd.date_range("2024-06-01", periods=n_days, freq="D").values
+        depth = np.abs(elev)
+        temp = 22.0 - 0.03 * depth                         # 22 C at the surface, cooling with depth
+        sal = 36.4 + 2.2 * np.clip(depth / 200.0, 0, 1)    # 37.5 reached at 100 m
+        shape = (len(times), len(elev), len(lats), len(lons))
+        T = np.broadcast_to(temp[None, :, None, None], shape).copy()
+        S = np.broadcast_to(sal[None, :, None, None], shape).copy()
+        T[:, :4, :, :5] = np.nan                            # shallow seabed in the first columns
+        return FakeDS({"time": times, "elevation": elev, "latitude": lats, "longitude": lons},
+                      {"thetao": FakeDA(T, ["time", "elevation", "latitude", "longitude"], {"units": "degrees_C"}),
+                       "so": FakeDA(S, ["time", "elevation", "latitude", "longitude"], {"units": "1e-3"})})
+
+    def test_isoline_depth(self):
+        from harvester.sources.copernicus import isoline_depth
+        z = np.array([1.0, 50, 100, 200])
+        prof = np.array([[36.5, 37.0, 37.4, 38.0], [37.6, 37.8, 38, 38], [36.0, 36.1, np.nan, np.nan]])
+        out = isoline_depth(prof, z, 37.5)
+        self.assertAlmostEqual(out[0], 100 + 0.1 / 0.6 * 100, places=5)
+        self.assertEqual(out[1], 0.0)
+        self.assertTrue(np.isnan(out[2]))
+
+    def test_temperature_at_depth_and_interface(self):
+        from harvester.sources.copernicus import CopernicusGrid
+        ds = self._profile_ds()
+        t = CopernicusGrid("cmems_med_temp_my", CONFIG["sources"]["cmems_med_temp_my"], CONFIG)
+        t._open = lambda *a, **k: ds
+        obs = {(o.variable, o.location): o for o in t.fetch(date(2024, 6, 1), date(2024, 6, 1))}
+        self.assertAlmostEqual(obs[("temp_surface", "gibraltar_20km")].val_mean, 22.0 - 0.03, places=4)
+        self.assertAlmostEqual(obs[("temp_10m", "gibraltar_20km")].val_mean, 22.0 - 0.03 * 10.5, places=4)
+        self.assertAlmostEqual(obs[("temp_20m", "gibraltar_20km")].val_mean, 22.0 - 0.03 * 19.7, places=4)
+        self.assertAlmostEqual(obs[("temp_100m", "western_alboran")].val_mean, 22.0 - 3.0, places=4)
+        s = CopernicusGrid("cmems_med_salprof_my", CONFIG["sources"]["cmems_med_salprof_my"], CONFIG)
+        s._open = lambda *a, **k: ds
+        obs = {(o.variable, o.location): o for o in s.fetch(date(2024, 6, 1), date(2024, 6, 1))}
+        self.assertAlmostEqual(obs[("interface_depth", "strait_of_gibraltar")].val_mean, 100.0, places=3)
+        self.assertAlmostEqual(obs[("salinity_200m", "strait_of_gibraltar")].val_mean, 38.6, places=4)
+
+    def test_plan_update_with_forecast_days(self):
+        cfg = {"lookback_days": 3, "forecast_days": 5}
+        today = date(2026, 9, 17)
+        start, end = plan_update(cfg, datetime(2026, 9, 22), today)       # forecast rows already stored
+        self.assertEqual((start, end), (date(2026, 9, 14), date(2026, 9, 22)))
+
+
+class DerivedProductTests(unittest.TestCase):
+    def test_upwelling_index_sign_and_events(self):
+        import pandas as pd
+        from harvester.derived import daily_upwelling_index, ekman_upwelling_index, upwelling_events
+        west = ekman_upwelling_index([8.0], [250.0], 70, 36.5)[0]      # WSW wind blowing along the coast
+        east = ekman_upwelling_index([8.0], [70.0], 70, 36.5)[0]       # Levanter
+        across = ekman_upwelling_index([8.0], [340.0], 70, 36.5)[0]    # blowing across the coast
+        self.assertGreater(west, 800)
+        self.assertAlmostEqual(east, -west)
+        self.assertLess(abs(across), 1e-6)
+        hours = pd.date_range("2024-07-01", periods=24 * 10, freq="h")
+        speed = [(t, 9.0 if 3 <= t.day <= 5 else 3.0) for t in hours]
+        direc = [(t, 270.0) for t in hours]
+        daily = daily_upwelling_index(speed, direc, 70, 36.5)
+        self.assertEqual(len(daily), 10)
+        events, status = upwelling_events(daily, threshold=500, min_days=2)
+        self.assertEqual([(e["start"], e["end"]) for e in events], [("2024-07-03", "2024-07-05")])
+        self.assertEqual(status["state"], "none")
+
+    def test_seabed_light(self):
+        import pandas as pd
+        from harvester.derived import kd_par_from_kd490, light_at_depths
+        idx = pd.date_range("2024-06-01", periods=3, freq="D")
+        par = pd.Series([50.0, 50.0, np.nan], index=idx)
+        kd = pd.Series([0.05, 0.10, 0.1], index=idx)
+        out = light_at_depths(par, kd, [10])
+        self.assertEqual(len(out[10]), 2)
+        kp = 0.0864 + 0.884 * 0.05 - 0.00137 / 0.05
+        self.assertAlmostEqual(kd_par_from_kd490(0.05), kp)
+        self.assertAlmostEqual(out[10].iloc[0], 50 * np.exp(-kp * 10))
+        self.assertLess(out[10].iloc[1], out[10].iloc[0])          # murkier water, less light
+
+    def test_bloom_detection_with_gaps_and_triggers(self):
+        import pandas as pd
+        from harvester.derived import attach_triggers, detect_blooms
+        idx = pd.date_range("2015-01-01", "2024-12-31", freq="D")
+        rng = np.random.default_rng(3)
+        chl = 10 ** (np.log10(0.3) + 0.2 * np.cos(2 * np.pi * (idx.dayofyear - 75) / 365) + rng.normal(0, 0.08, len(idx)))
+        s = pd.Series(chl, index=idx)
+        s.loc["2024-10-10":"2024-10-20"] *= 4
+        s = s[rng.random(len(s)) > 0.35]                         # cloud gaps
+        s = s.drop(pd.Timestamp("2024-10-14"), errors="ignore").drop(pd.Timestamp("2024-10-15"), errors="ignore")
+        res = detect_blooms(s)
+        ev = [e for e in res["events"] if e["start"].startswith("2024-10")]
+        self.assertEqual(len(ev), 1)
+        self.assertLessEqual(ev[0]["start"], "2024-10-12")
+        self.assertGreaterEqual(ev[0]["end"], "2024-10-18")
+        self.assertGreater(ev[0]["peak_ratio"], 3)
+        attach_triggers(ev, {"upwelling": [{"start": "2024-10-02", "end": "2024-10-06"}],
+                             "dust": [{"start": "2024-08-01", "end": "2024-08-02"}]})
+        self.assertEqual([t["type"] for t in ev[0]["triggers"]], ["upwelling"])
+        self.assertEqual(len(res["normal"]), 366)
+
+    def test_tide_fit_prediction_and_surge(self):
+        import pandas as pd
+        from harvester.derived import EPOCH, fit_tide, tide_analysis
+        idx = pd.date_range("2023-01-01", "2024-12-31 23:00", freq="h")
+        t = ((idx - EPOCH) / pd.Timedelta(hours=1)).values
+        tide = 0.32 * np.cos(np.radians(28.9841042 * t) - 1.1) + 0.11 * np.cos(np.radians(30.0 * t) - 0.4) \
+            + 0.04 * np.cos(np.radians(15.0410686 * t) - 2.0)
+        level = 1.8 + tide + np.random.default_rng(1).normal(0, 0.02, len(t))
+        s = pd.Series(level, index=idx)
+        s.loc["2024-12-20":"2024-12-22"] += 0.25                  # a storm surge
+        fit = fit_tide(s[s.index.year == 2023])
+        self.assertAlmostEqual(fit["constituents"]["M2"]["amp"], 0.32, places=2)
+        self.assertAlmostEqual(fit["constituents"]["S2"]["amp"], 0.11, places=2)
+        self.assertAlmostEqual(fit["mean"], 1.8, places=2)
+        level_d, surge_d, payload = tide_analysis(s, datetime(2024, 12, 31, 12), predict_days=3)
+        self.assertGreater(surge_d.loc["2024-12-21"], 0.2)
+        self.assertLess(abs(surge_d.loc["2024-06-01"]), 0.05)
+        highs = [e for e in payload["extremes"] if e["type"] == "high"]
+        self.assertGreaterEqual(len(highs), 5)                    # about two high waters a day
+        self.assertTrue(all(0.15 < e["height"] < 0.5 for e in highs))      # neap to spring high waters
+        times = [pd.Timestamp(e["time"]) for e in payload["extremes"]]
+        gaps = np.diff([x.value for x in times]) / 3.6e12
+        self.assertTrue(all(5 < g < 7.5 for g in gaps))          # semidiurnal: high and low about 6 h apart
+
+    def test_ioc_parser(self):
+        from harvester.sources.stations import parse_ioc_sealevel
+        recs = []
+        for m in range(120):
+            t = datetime(2026, 9, 15, 0, 0) + timedelta(minutes=m)
+            recs.append({"slevel": 0.6 + 0.001 * m, "stime": t.strftime("%Y-%m-%d %H:%M:%S"), "sensor": "rad"})
+            recs.append({"slevel": 5.0, "stime": t.strftime("%Y-%m-%d %H:%M:%S"), "sensor": "prs"})
+        recs[40]["slevel"] = 3.0                                 # a spike
+        h = parse_ioc_sealevel(recs)
+        self.assertEqual(len(h), 2)
+        self.assertAlmostEqual(h.iloc[0], 0.6 + 0.001 * 29.5, delta=0.002)
+
+
+class ExportNewProductsTests(unittest.TestCase):
+    def test_forecast_split_upwelling_light_blooms_tides(self):
+        import pandas as pd
+        tmp = tempfile.TemporaryDirectory()
+        db = Database(f"sqlite:///{tmp.name}/t.db"); db.init_schema()
+        today = datetime(2026, 9, 17)
+        rng = np.random.default_rng(0)
+        obs = []
+        days = pd.date_range("2020-01-01", today, freq="D")
+        for d in days:
+            dd = d.to_pydatetime()
+            seas = np.cos(2 * np.pi * (d.dayofyear - 232) / 365)
+            obs.append(Observation("cmems_med_sst_rep", "sst", "gibraltar_20km", dd, 19 + 3 * seas + rng.normal(0, .3), n_valid=9, n_total=9))
+            obs.append(Observation("cmems_med_temp_my", "temp_surface", "gibraltar_20km", dd, 18.5 + 3 * seas, n_valid=9, n_total=9))
+            obs.append(Observation("nasa_par_modisa", "par", "gibraltar_20km", dd, 40.0, n_valid=4, n_total=4))
+            obs.append(Observation("cmems_med_kd490_my", "kd490", "gibraltar_20km", dd, 0.06, val_median=0.06, n_valid=9, n_total=9))
+            obs.append(Observation("cmems_med_chl_my", "chl", "gibraltar_20km", dd, 0.3, val_median=0.3 * (1 + rng.normal(0, .1)), n_valid=9, n_total=9))
+        for k in range(1, 6):                                       # model forecast days
+            d = today + timedelta(days=k)
+            obs.append(Observation("cmems_med_temp_anfc", "temp_surface", "gibraltar_20km", d, 22.0, n_valid=9, n_total=9))
+        for h in range(-24 * 20, 24 * 5):                           # hourly wind incl. forecast hours
+            t = today + timedelta(hours=h)
+            src = "openmeteo_era5" if h < -24 * 5 else "openmeteo_forecast"
+            obs.append(Observation(src, "wind_speed", "gibraltar_airport", t, 9.0, n_valid=1, n_total=1))
+            obs.append(Observation(src, "wind_dir", "gibraltar_airport", t, 260.0, n_valid=1, n_total=1))
+        idx = pd.date_range(today - timedelta(days=120), today - timedelta(hours=1), freq="h")
+        tt = ((idx - pd.Timestamp("2000-01-01")) / pd.Timedelta(hours=1)).values
+        for t, v in zip(idx, 1.0 + 0.4 * np.cos(np.radians(28.9841042 * tt))):
+            obs.append(Observation("ioc_alge", "sea_level_hourly", "algeciras_gauge", t.to_pydatetime(), float(v), n_valid=1, n_total=1))
+        db.upsert_observations(obs)
+        cfg = {**CONFIG, "export": {**CONFIG["export"], "output_dir": f"{tmp.name}/pub", "site_dir": f"{tmp.name}/nosite"}}
+        export(cfg, db, log=lambda *a: None, today=today.date())
+        out = Path(f"{tmp.name}/pub")
+        daily = json.loads((out / "daily" / "temp_surface__gibraltar_20km.json").read_text())
+        self.assertLessEqual(daily["data"][-1][0], "2026-09-17")               # no future days in the record
+        fc = json.loads((out / "forecast" / "sst__gibraltar_20km.json").read_text())
+        self.assertEqual(len(fc["data"]), 5)
+        self.assertAlmostEqual(fc["bias_offset"], 0.5, delta=0.3)              # satellite runs ~0.5 C warmer
+        self.assertAlmostEqual(fc["data"][0][1], 22.0 + fc["bias_offset"], places=3)
+        up = json.loads((out / "upwelling.json").read_text())
+        self.assertEqual(up["status"]["state"], "upwelling")
+        self.assertEqual(len(up["forecast"]), 4)                             # 18-21 Sept: whole forecast days
+        self.assertTrue((out / "daily" / "par_10m__gibraltar_20km.json").exists())
+        self.assertTrue((out / "daily" / "upwelling_index__gibraltar_airport.json").exists())
+        self.assertIn("gibraltar_20km", json.loads((out / "blooms.json").read_text()))
+        tides = json.loads((out / "tides.json").read_text())
+        self.assertGreater(len(tides["extremes"]), 10)
+        self.assertTrue((out / "daily" / "surge__algeciras_gauge.json").exists())
+        meta = json.loads((out / "meta.json").read_text())
+        self.assertIn("sst__gibraltar_20km", meta["forecasts"])
+        db.close()
+        tmp.cleanup()
 
 
 if __name__ == "__main__":
