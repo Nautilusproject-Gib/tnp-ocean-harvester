@@ -34,10 +34,10 @@ points:
     name: Gibraltar Airport (LXGB)
     lat: 36.151
     lon: -5.349
-  algeciras_gauge:
-    name: Algeciras tide gauge
-    lat: 36.12
-    lon: -5.43
+  gibraltar_tide_gauge:
+    name: Gibraltar tide gauge
+    lat: 36.1482
+    lon: -5.3649
   aeronet_malaga:            # location code used automatically for AERONET site "Malaga"
     name: AERONET Malaga
     lat: 36.715
@@ -645,17 +645,17 @@ sources:
     chunk_days: 60
 
   # ---------------- Tide gauge (no account) ----------------
-  ioc_alge:
-    label: Algeciras tide gauge (IOC)
+  ioc_gibraltar:
+    label: Gibraltar tide gauge (IOC)
     enabled: true
     type: ioc_sealevel
-    description: IOC Sea Level Station Monitoring Facility, Algeciras radar tide gauge, minute data averaged to hourly
-    station: alge
-    point: algeciras_gauge
-    sensors: [rad, prs, flt, enc, pr1, bub]
-    earliest: "2009-01-01"
-    chunk_days: 91
-    request_days: 7
+    description: IOC Sea Level Station Monitoring Facility, Gibraltar tide gauge (National Oceanography Centre for the Gibraltar Port Authority), averaged to hourly
+    stations: [gibr3, gibr]          # current gauge first, then the earlier one
+    point: gibraltar_tide_gauge
+    sensors: [rad, pr1, prs, flt, enc, bub]   # radar first; pr2 is not a sea level record
+    earliest: "2005-01-01"
+    chunk_days: 60
+    request_days: 3                  # the older gauge reports every 10 seconds, so keep requests small
     lookback_days: 3
 
   # ---------------- CAMS reanalysis (free ADS account) ----------------
@@ -820,9 +820,9 @@ export:
     trigger_lookback_days: 10
 
   tides:
-    source: ioc_alge
-    location: algeciras_gauge
-    predict_days: 7
+    source: ioc_gibraltar
+    location: gibraltar_tide_gauge
+    predict_days: 15                 # a full spring-neap cycle for the dashboard
 
   forecast:
     bias_correct:
