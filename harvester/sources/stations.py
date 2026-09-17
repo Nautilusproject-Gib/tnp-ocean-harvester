@@ -3,6 +3,8 @@
 - NOAA NCEI Integrated Surface Database (ISD / "global-hourly"), Gibraltar LXGB
 - Open-Meteo historical weather (ERA5) and air quality (CAMS)
 - NASA AERONET sun photometer daily averages
+- Open-Meteo weather forecast (recent days and the week ahead)
+- IOC Sea Level Station Monitoring Facility tide gauges (Algeciras)
 """
 from __future__ import annotations
 
@@ -129,6 +131,7 @@ class NceiIsd(Source):
 # ----------------------------------------------------------------------------------------------
 OM_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 OM_AIR = "https://air-quality-api.open-meteo.com/v1/air-quality"
+OM_FORECAST = "https://api.open-meteo.com/v1/forecast"
 
 
 def parse_openmeteo_hourly(js: dict, variables: dict, source: str, location: str):
@@ -187,6 +190,99 @@ class OpenMeteoArchive(_OpenMeteo):
 
 class OpenMeteoAirQuality(_OpenMeteo):
     endpoint = OM_AIR
+
+
+class OpenMeteoForecast(Source):
+    """The last few days and the week ahead from Open-Meteo's forecast models (no account).
+
+    Recent days fill the few days ERA5 lags behind; days after today are published as forecasts.
+    The requested date range is ignored: every run fetches past_days back and forecast_days ahead.
+    """
+
+    def fetch(self, start: date, end: date):
+        out = []
+        for pcode in self.cfg["points"]:
+            p = self.point(pcode)
+            params = {
+                "latitude": p["lat"], "longitude": p["lon"],
+                "hourly": ",".join(self.cfg["variables"].keys()),
+                "past_days": int(self.cfg.get("past_days", 7)),
+                "forecast_days": int(self.cfg.get("forecast_days", 7)) + 1,     # +1: today counts as a day
+                "wind_speed_unit": "ms", "precipitation_unit": "mm", "temperature_unit": "celsius",
+                "timezone": "GMT",
+            }
+            if self.cfg.get("model"):
+                params["models"] = self.cfg["model"]
+            r = self.http_get(OM_FORECAST, params=params, timeout=120)
+            if r.status_code >= 400:
+                continue
+            out.extend(parse_openmeteo_hourly(r.json(), self.cfg["variables"], self.code, pcode))
+        return out
+
+
+# ----------------------------------------------------------------------------------------------
+# IOC Sea Level Station Monitoring Facility
+# ----------------------------------------------------------------------------------------------
+IOC_URL = "https://www.ioc-sealevelmonitoring.org/service.php"
+
+
+def parse_ioc_sealevel(records: list, sensors=("rad", "prs", "flt", "enc", "pr1", "bub"),
+                       spike_m: float = 0.3, min_per_hour: int = 20) -> pd.Series:
+    """IOC minute records [{slevel, stime, sensor}] -> hourly mean sea level (m), spikes removed.
+
+    Uses the first sensor in `sensors` that has data. A reading more than `spike_m` from the
+    15-minute running median is dropped. An hour needs `min_per_hour` good readings.
+    """
+    if not isinstance(records, list) or not records:
+        return pd.Series(dtype="float64")                  # the service answers errors with a JSON object
+    df = pd.DataFrame(records)
+    if not {"slevel", "stime"} <= set(df.columns):
+        return pd.Series(dtype="float64")
+    if "sensor" in df.columns:
+        present = list(df["sensor"].dropna().unique())
+        pick = next((x for x in sensors if x in present), present[0] if present else None)
+        if pick is not None:
+            df = df[df["sensor"] == pick]
+    df["t"] = pd.to_datetime(df["stime"], errors="coerce")
+    df["v"] = pd.to_numeric(df["slevel"], errors="coerce")
+    s = df.dropna(subset=["t", "v"]).drop_duplicates("t").set_index("t")["v"].sort_index()
+    s = s[(s > -20) & (s < 20)]
+    if s.empty:
+        return pd.Series(dtype="float64")
+    med = s.rolling("15min", center=True, min_periods=3).median()
+    s = s[(s - med).abs() <= spike_m]
+    g = s.resample("1h")
+    hourly = g.mean().where(g.count() >= min_per_hour)
+    return hourly.dropna()
+
+
+class IocSeaLevel(Source):
+    def fetch(self, start: date, end: date):
+        import time as _time
+        today = datetime.utcnow().date()
+        end = min(end, today)
+        out = []
+        station, point = self.cfg["station"], self.cfg["point"]
+        step = int(self.cfg.get("request_days", 7))
+        cur = start
+        while cur <= end:
+            stop = min(end, cur + timedelta(days=step - 1))
+            params = {"query": "data", "format": "json", "code": station,
+                      "timestart": cur.isoformat(), "timestop": (stop + timedelta(days=1)).isoformat()}
+            r = self.http_get(IOC_URL, params=params, timeout=180)
+            try:
+                records = r.json() if r.status_code < 400 else []
+            except ValueError:
+                records = []
+            hourly = parse_ioc_sealevel(records, tuple(self.cfg.get("sensors") or
+                                                        ("rad", "prs", "flt", "enc", "pr1", "bub")))
+            hourly = hourly[(hourly.index >= pd.Timestamp(cur)) & (hourly.index < pd.Timestamp(stop + timedelta(days=1)))]
+            for t, v in hourly.items():
+                out.append(Observation(self.code, "sea_level_hourly", point, t.to_pydatetime(), float(v),
+                                       n_valid=1, n_total=1))
+            cur = stop + timedelta(days=1)
+            _time.sleep(float(self.cfg.get("pause_seconds", 1.0)))       # be gentle with a free service
+        return out
 
 
 # ----------------------------------------------------------------------------------------------

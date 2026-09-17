@@ -2,7 +2,8 @@ from .base import Source, SourceError
 from .cams import CamsEac4
 from .copernicus import CopernicusGrid, CopernicusPoint
 from .nasa import NasaL3m
-from .stations import Aeronet, NceiIsd, OpenMeteoAirQuality, OpenMeteoArchive
+from .stations import (Aeronet, IocSeaLevel, NceiIsd, OpenMeteoAirQuality, OpenMeteoArchive,
+                       OpenMeteoForecast)
 
 SOURCE_TYPES = {
     "copernicus_grid": CopernicusGrid,
@@ -13,6 +14,8 @@ SOURCE_TYPES = {
     "openmeteo_airquality": OpenMeteoAirQuality,
     "cams_eac4": CamsEac4,
     "aeronet": Aeronet,
+    "openmeteo_forecast": OpenMeteoForecast,
+    "ioc_sealevel": IocSeaLevel,
 }
 
 

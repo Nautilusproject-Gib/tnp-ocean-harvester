@@ -8,6 +8,9 @@ In config.yaml a source's `variables` maps dataset variable names to our codes, 
 or, when the exact name in the dataset is uncertain or the units need converting,
     {DIATO: {code: diatoms, match: diatom}}
     {dissic: {code: dic, scale: 1000}}        # mol m-3 -> mmol m-3
+For 3-D model variables a spec can also ask for values at fixed depths and an isoline depth:
+    {thetao: {code: temp, depths: [10, 30, 50], surface_code: temp_surface}}   # -> temp_10m, temp_30m ...
+    {so: {code: salinity, depths: [100], interface: {code: interface_depth, value: 37.5}}}
 `match` is looked for (case-insensitively) in the variable name, standard_name and long_name
 if the given name is not in the dataset.
 """
@@ -36,10 +39,56 @@ def variable_specs(cfg: dict) -> list[dict]:
     for name, spec in (cfg.get("variables") or {}).items():
         if isinstance(spec, dict):
             out.append({"name": name, "code": spec["code"], "match": spec.get("match"),
-                        "scale": spec.get("scale")})
+                        "scale": spec.get("scale"), "depths": spec.get("depths"),
+                        "surface_code": spec.get("surface_code"), "interface": spec.get("interface")})
         else:
-            out.append({"name": name, "code": spec, "match": None, "scale": None})
+            out.append({"name": name, "code": spec, "match": None, "scale": None,
+                        "depths": None, "surface_code": None, "interface": None})
     return out
+
+
+def spec_codes(spec: dict) -> list[str]:
+    """Variable codes a spec produces."""
+    if spec.get("depths") or spec.get("interface"):
+        codes = [f"{spec['code']}_{int(d)}m" for d in (spec.get("depths") or [])]
+        if spec.get("surface_code"):
+            codes.insert(0, spec["surface_code"])
+        if spec.get("interface"):
+            codes.append(spec["interface"]["code"])
+        return codes
+    return [spec["code"]]
+
+
+def nearest_level(depths, target: float) -> int:
+    return int(np.argmin(np.abs(np.asarray(depths, dtype="float64") - float(target))))
+
+
+def isoline_depth(profile, depths, value: float):
+    """Depth where a profile first reaches `value` going down, linearly interpolated.
+
+    profile: array [..., z] (NaN below the seabed); depths: 1-D ascending, positive down.
+    Returns NaN where the value is never reached, 0 where the surface already reaches it.
+    """
+    prof = np.asarray(profile, dtype="float64")
+    z = np.asarray(depths, dtype="float64")
+    flat = prof.reshape(-1, prof.shape[-1])
+    out = np.full(flat.shape[0], np.nan)
+    for i, col in enumerate(flat):
+        ok = np.isfinite(col)
+        if not ok.any():
+            continue
+        c, zz = col[ok], z[ok]
+        hit = np.where(c >= value)[0]
+        if hit.size == 0:
+            continue
+        k = hit[0]
+        if k == 0:
+            out[i] = 0.0
+            continue
+        c0, c1 = c[k - 1], c[k]
+        frac = (value - c0) / (c1 - c0) if c1 != c0 else 0.0
+        out[i] = zz[k - 1] + frac * (zz[k] - zz[k - 1])
+    return out.reshape(prof.shape[:-1])
 
 
 def resolve_variable(ds_vars: dict, spec: dict) -> str | None:
@@ -121,14 +170,57 @@ class _CopernicusBase(Source):
                 print(f"[{self.code}]   {actual} -> {spec['code']}  units: {ds_vars[actual].get('units', '?')}")
         return resolved
 
+    def _profile(self, ds, var, scale=None):
+        """Times, lats, lons, depths (positive down, ascending) and values [time, depth, lat, lon]."""
+        da = ds[var]
+        tname = _coord(ds, "time")
+        la, lo = _coord(ds, "latitude", "lat"), _coord(ds, "longitude", "lon")
+        zdims = [d for d in da.dims if d not in (tname, la, lo)]
+        if len(zdims) != 1:
+            raise SourceError(f"{var}: expected one vertical dimension, found {zdims}")
+        zd = zdims[0]
+        da = da.transpose(tname, zd, la, lo)
+        vals = np.asarray(da.values, dtype="float64")
+        depths = np.abs(np.asarray(ds[zd].values, dtype="float64"))      # 'elevation' is negative
+        order = np.argsort(depths)
+        vals, depths = vals[:, order], depths[order]
+        if scale:
+            vals = vals * float(scale)
+        times = pd.to_datetime(ds[tname].values).to_pydatetime()
+        return times, np.asarray(ds[la].values), np.asarray(ds[lo].values), depths, vals
+
+    def _depth_fields(self, ds, spec):
+        """{code: values [time, lat, lon]} for a spec with depths / interface."""
+        times, lats, lons, depths, prof = self._profile(ds, spec["actual"], spec.get("scale"))
+        vmeta = self.config.get("variables", {})
+        fields = {}
+        if spec.get("surface_code"):
+            c = spec["surface_code"]
+            fields[c] = mask_valid(prof[:, 0], vmeta.get(c, {}).get("valid_range"))
+        for d in spec.get("depths") or []:
+            c = f"{spec['code']}_{int(d)}m"
+            k = nearest_level(depths, d)
+            if abs(depths[k] - d) > max(3.0, 0.3 * d):
+                raise SourceError(f"{spec['actual']}: no model level near {d} m (nearest {depths[k]:.1f} m); "
+                                  f"is max_depth deep enough?")
+            fields[c] = mask_valid(prof[:, k], vmeta.get(c, {}).get("valid_range"))
+        if spec.get("interface"):
+            ic = spec["interface"]
+            iso = isoline_depth(np.moveaxis(prof, 1, -1), depths, float(ic["value"]))   # [time, lat, lon]
+            fields[ic["code"]] = mask_valid(iso, vmeta.get(ic["code"], {}).get("valid_range"))
+        return times, lats, lons, fields
+
     def _values(self, ds, var, code, scale=None):
         da = ds[var]
         tname = _coord(ds, "time")
         la, lo = _coord(ds, "latitude", "lat"), _coord(ds, "longitude", "lon")
-        # keep only the top level of any extra dimension (e.g. depth)
+        # keep only the level nearest the surface of any extra dimension (e.g. depth or elevation)
         for d in list(da.dims):
             if d not in (tname, la, lo):
-                da = da.isel({d: 0})
+                idx = 0
+                if d in ds.coords:
+                    idx = int(np.argmin(np.abs(np.asarray(ds[d].values, dtype="float64"))))
+                da = da.isel({d: idx})
         da = da.transpose(tname, la, lo)
         vals = np.asarray(da.values, dtype="float64")
         if var in (self.cfg.get("kelvin_to_celsius") or []):
@@ -170,12 +262,17 @@ class CopernicusGrid(_CopernicusBase):
             if self.cfg.get("derive") == "currents":
                 return self._currents(ds, specs)
             for spec in specs:
-                times, lats, lons, vals = self._values(ds, spec["actual"], spec["code"], spec.get("scale"))
-                for acode, area in self.areas().items():
-                    sy, sx = _area_slices(lats, lons, area["bbox"])
-                    sub = vals[:, sy, sx]
-                    for k, t in enumerate(times):
-                        out.append(Observation(self.code, spec["code"], acode, t, **area_stats(sub[k])))
+                if spec.get("depths") or spec.get("interface"):
+                    times, lats, lons, fields = self._depth_fields(ds, spec)
+                else:
+                    times, lats, lons, vals = self._values(ds, spec["actual"], spec["code"], spec.get("scale"))
+                    fields = {spec["code"]: vals}
+                for code, vals in fields.items():
+                    for acode, area in self.areas().items():
+                        sy, sx = _area_slices(lats, lons, area["bbox"])
+                        sub = vals[:, sy, sx]
+                        for k, t in enumerate(times):
+                            out.append(Observation(self.code, code, acode, t, **area_stats(sub[k])))
         finally:
             ds.close()
         return out
@@ -203,7 +300,7 @@ class CopernicusPoint(_CopernicusBase):
     """Hourly model series at the nearest valid sea cell to each configured point."""
 
     def fetch(self, start: date, end: date):
-        extra = int(self.cfg.get("include_forecast_days") or 0)
+        extra = int(self.cfg.get("forecast_days") or self.cfg.get("include_forecast_days") or 0)
         today = datetime.utcnow().date()
         if end >= today:
             end = today + timedelta(days=extra) if extra else today
