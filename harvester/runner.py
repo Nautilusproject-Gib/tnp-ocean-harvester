@@ -32,14 +32,15 @@ def plan_update(cfg: dict, latest: datetime | None, today: date) -> tuple[date, 
     lookback = int(cfg.get("lookback_days", 5))
     window = cfg.get("rolling_window_days")
     if latest is not None:
-        start = latest.date() - timedelta(days=lookback)
+        # forecast rows can lie in the future; always re-fetch from before today so analyses replace forecasts
+        start = min(latest.date(), today) - timedelta(days=lookback)
     else:
         start = today - timedelta(days=int(window or 30))
     if window:
         start = max(start, today - timedelta(days=int(window)))
     if cfg.get("earliest"):
         start = max(start, date.fromisoformat(str(cfg["earliest"])))
-    end = today
+    end = today + timedelta(days=int(cfg.get("forecast_days") or 0))
     if cfg.get("latest"):
         end = min(end, date.fromisoformat(str(cfg["latest"])))
     return (start, end) if start <= end else None

@@ -5,7 +5,12 @@ Produces, under export.output_dir (default public/data):
   latest.json                        latest daily value per variable/location, with anomaly
   daily/<variable>__<location>.json  merged daily series, record statistics and day-of-year climatology
   dust_events.json                   Saharan dust episodes and what chlorophyll/light did around them
-  marine_heatwaves.json              marine heatwave events and today's status for each sea area
+  marine_heatwaves.json              marine heatwave events and today's status for each sea area (SST)
+  marine_heatwaves__<variable>.json  the same for temperature at depth
+  forecast/<variable>__<location>.json  daily forecast for the days after today
+  upwelling.json                     upwelling index events and status
+  blooms.json                        chlorophyll bloom events (with possible triggers) and status
+  tides.json                         tide predictions, high and low waters, recent observed vs predicted
 
 It also copies the dashboard page (the site/ folder) next to the data, so GitHub Pages
 publishes page and data together.
@@ -21,6 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import derived as dv
 from .db import Database
 from .stats import circular_mean_deg
 
@@ -312,8 +318,11 @@ def marine_heatwaves(sst: pd.Series, baseline=(1991, 2020), min_days=5, max_gap_
             "events": events, "status": status}
 
 
+DERIVED_LABELS = {"derived_light": "Derived from satellite PAR and KD490"}
+
+
 def source_label(config: dict, code: str) -> str:
-    return config.get("sources", {}).get(code, {}).get("label") or code
+    return config.get("sources", {}).get(code, {}).get("label") or DERIVED_LABELS.get(code) or code
 
 
 def _write_series(path, config, variable, location, merged, clim, rec, options=None):
@@ -337,24 +346,46 @@ def _write_series(path, config, variable, location, merged, clim, rec, options=N
     path.write_text(json.dumps(payload, separators=(",", ":")))
 
 
-def export(config: dict, db: Database, log=print):
+def export(config: dict, db: Database, log=print, today=None):
     ecfg = config.get("export", {})
     out_dir = Path(ecfg.get("output_dir", "public/data"))
     (out_dir / "daily").mkdir(parents=True, exist_ok=True)
+    (out_dir / "forecast").mkdir(parents=True, exist_ok=True)
     priorities = ecfg.get("daily_priority", {})
+    variables = config.get("variables", {})
+    today = pd.Timestamp(today or datetime.now(timezone.utc).date())
 
-    n_clean = db.clean_out_of_range(config.get("variables", {}))
+    n_clean = db.clean_out_of_range(variables)
     if n_clean:
         log(f"Blanked {n_clean} out-of-range statistics before export")
 
-    grouped = defaultdict(dict)  # (variable, location) -> {source: daily series}
+    grouped = defaultdict(dict)    # (variable, location) -> {source: daily series up to today}
+    forecasts = defaultdict(dict)  # (variable, location) -> {source: daily series after today}
+
+    def add(variable, location, source, s):
+        if s is None or s.empty:
+            return
+        s = s.dropna()
+        past, future = s[s.index <= today], s[s.index > today]
+        if not past.empty:
+            grouped[(variable, location)][source] = past
+        if not future.empty:
+            forecasts[(variable, location)][source] = future
+
+    up = ecfg.get("upwelling") or {}
+    up_wind = up.get("wind") or {}
+    tides_cfg = ecfg.get("tides") or {}
+    tide_payload = None
+
     for source, variable, location in db.series_keys():
-        stat = config.get("variables", {}).get(variable, {}).get("daily_statistic", "mean")
+        if variable == "sea_level_hourly":
+            continue                                           # handled by the tide analysis below
+        stat = variables.get(variable, {}).get("daily_statistic", "mean")
         series = db.fetch_series(variable, location, source, statistic=stat)
         s = daily_aggregate(series, variable)
         if s.empty:
             continue
-        grouped[(variable, location)][source] = s
+        add(variable, location, source, s)
         if variable == "sw_rad":
             # derived series kept separate from satellite PAR, so the two are never silently mixed
             df = pd.DataFrame(series, columns=["t", "v"])
@@ -362,7 +393,40 @@ def export(config: dict, db: Database, log=print):
             counts = df.groupby(df["t"].dt.normalize())["v"].count()
             complete = s[counts.reindex(s.index).fillna(0) >= 20]
             if not complete.empty:
-                grouped[("par_era5", location)][source] = par_from_shortwave(complete)
+                add("par_era5", location, source, par_from_shortwave(complete))
+        if (variable == "wind_speed" and up and location == up_wind.get("location")
+                and source in (up_wind.get("sources") or [])):
+            ui = dv.daily_upwelling_index(series, db.fetch_series("wind_dir", location, source),
+                                          float(up.get("coast_bearing", 70)), float(up.get("latitude", 36.5)))
+            add("upwelling_index", location, source, ui)
+
+    if tides_cfg:
+        hourly = db.fetch_series("sea_level_hourly", tides_cfg["location"], tides_cfg["source"])
+        if hourly:
+            hs = pd.Series({pd.Timestamp(t): v for t, v in hourly})
+            res = dv.tide_analysis(hs, datetime.now(timezone.utc).replace(tzinfo=None),
+                                   predict_days=int(tides_cfg.get("predict_days", 7)))
+            if res:
+                level, surge, tide_payload = res
+                add("sea_level", tides_cfg["location"], tides_cfg["source"], level)
+                add("surge", tides_cfg["location"], tides_cfg["source"], surge)
+                tide_payload.update(station=source_label(config, tides_cfg["source"]),
+                                    location=tides_cfg["location"])
+
+    def merged_for(variable, location):
+        per_source = grouped.get((variable, location), {})
+        return merge_by_priority(per_source, priorities.get(variable, [])) if per_source else pd.DataFrame()
+
+    # light reaching the seabed, from the combined satellite PAR and KD490 of each area
+    light = ecfg.get("seabed_light") or {}
+    if light:
+        for loc in config.get("areas", {}):
+            par, kd = merged_for("par", loc), merged_for("kd490", loc)
+            if par.empty or kd.empty:
+                continue
+            for d, series in dv.light_at_depths(par["value"].astype(float), kd["value"].astype(float),
+                                                light.get("depths", [5, 10, 20])).items():
+                add(f"par_{int(d)}m", loc, "derived_light", series)
 
     merged_by_key = {}
     latest = []
@@ -406,33 +470,115 @@ def export(config: dict, db: Database, log=print):
                        "value": _r(last_val), "clim_mean": mean, "clim_sd": sd, "anomaly": anomaly, "z": z,
                        "source": merged.loc[last_day, "source"]})
 
+    # ---------------- forecasts ----------------
+    fcfg = ecfg.get("forecast") or {}
+    for var, bc in (fcfg.get("bias_correct") or {}).items():
+        for (fvar, loc), per_source in list(forecasts.items()):
+            if fvar != bc["from"] or (var, loc) in forecasts:
+                continue
+            obs, model = merged_by_key.get((var, loc)), merged_by_key.get((fvar, loc))
+            if obs is None or model is None:
+                continue
+            diff = (obs["value"].astype(float) - model["value"].astype(float)).dropna()
+            diff = diff[diff.index > today - pd.Timedelta(days=int(bc.get("days", 14)))]
+            if diff.size < 3:
+                continue
+            for src, fc in per_source.items():
+                forecasts[(var, loc)][src] = fc + float(diff.mean())
+                forecasts[(var, loc)]["_offset"] = float(diff.mean())
+    forecast_keys = []
+    for (var, loc), per_source in sorted(forecasts.items()):
+        offset = per_source.pop("_offset", None)
+        if (var, loc) not in merged_by_key or not per_source:
+            continue
+        order = [s for s in priorities.get(var, []) if s in per_source] + [s for s in per_source if s not in priorities.get(var, [])]
+        src = order[0]
+        fc = per_source[src].sort_index()
+        vmeta = variables.get(var, {})
+        payload = {"variable": var, "location": loc, "unit": vmeta.get("unit"), "issued": today.strftime("%Y-%m-%d"),
+                   "source": src, "source_label": source_label(config, src),
+                   "bias_offset": _r(offset, 3) if offset is not None else None,
+                   "data": [[d.strftime("%Y-%m-%d"), _r(float(v))] for d, v in fc.items()]}
+        (out_dir / "forecast" / f"{var}__{loc}.json").write_text(json.dumps(payload, separators=(",", ":")))
+        forecast_keys.append(f"{var}__{loc}")
+
+    # ---------------- events ----------------
     events = dust_events(config, merged_by_key, log=log)
     (out_dir / "dust_events.json").write_text(json.dumps(events, indent=1))
 
     mcfg = ecfg.get("marine_heatwaves") or {}
+    mhw_by_var = {}
     if mcfg:
-        mhw_out = {}
-        for loc in mcfg.get("locations", []):
-            m = merged_by_key.get((mcfg.get("variable", "sst"), loc))
+        mvars = [mcfg.get("variable", "sst")] + list(mcfg.get("extra_variables") or [])
+        for var in mvars:
+            out = {}
+            for loc in mcfg.get("locations", []):
+                m = merged_by_key.get((var, loc))
+                if m is None or m.empty:
+                    continue
+                res = marine_heatwaves(m["value"].astype(float), tuple(mcfg.get("baseline", (1991, 2020))),
+                                       int(mcfg.get("min_days", 5)), int(mcfg.get("max_gap_days", 2)))
+                if res:
+                    out[loc] = res
+            mhw_by_var[var] = out
+            name = "marine_heatwaves.json" if var == mvars[0] else f"marine_heatwaves__{var}.json"
+            (out_dir / name).write_text(json.dumps(out, separators=(",", ":")))
+        log("Marine heatwaves: " + ", ".join(f"{v}/{k} {len(r['events'])}" for v, o in mhw_by_var.items() for k, r in o.items()))
+
+    up_events = []
+    if up:
+        m = merged_by_key.get(("upwelling_index", up_wind.get("location")))
+        if m is not None and not m.empty:
+            up_events, status = dv.upwelling_events(m["value"].astype(float), float(up.get("threshold", 500)),
+                                                    int(up.get("min_days", 2)), int(up.get("max_gap_days", 1)))
+            for ev in up_events:
+                ev["response"] = dv.response_stats(merged_by_key, up.get("response", []), pd.Timestamp(ev["start"]),
+                                                   pd.Timestamp(ev["end"]), int(up.get("response_window_days", 7)),
+                                                   int(up.get("response_lag_days", 3)))
+            fc = forecasts.get(("upwelling_index", up_wind.get("location")), {})
+            fc_src = next((s for s in (up_wind.get("sources") or []) if s in fc), None)
+            fc_days = [[d.strftime("%Y-%m-%d"), _r(float(v), 0)] for d, v in fc[fc_src].items()] if fc_src else []
+            payload = {"threshold": float(up.get("threshold", 500)), "min_days": int(up.get("min_days", 2)),
+                       "coast_bearing": float(up.get("coast_bearing", 70)), "unit": "m3 s-1 km-1",
+                       "location": up_wind.get("location"), "events": up_events, "status": status,
+                       "forecast": fc_days}
+            (out_dir / "upwelling.json").write_text(json.dumps(payload, separators=(",", ":")))
+            log(f"Upwelling: {len(up_events)} events, now {status['state'] if status else 'n/a'}")
+
+    bcfg = ecfg.get("blooms") or {}
+    if bcfg:
+        blooms = {}
+        for loc in bcfg.get("locations", []):
+            m = merged_by_key.get((bcfg.get("variable", "chl"), loc))
             if m is None or m.empty:
                 continue
-            res = marine_heatwaves(m["value"].astype(float), tuple(mcfg.get("baseline", (1991, 2020))),
-                                   int(mcfg.get("min_days", 5)), int(mcfg.get("max_gap_days", 2)))
-            if res:
-                mhw_out[loc] = res
-        (out_dir / "marine_heatwaves.json").write_text(json.dumps(mhw_out, separators=(",", ":")))
-        log(f"Marine heatwaves: " + ", ".join(f"{k} {len(v['events'])} events" for k, v in mhw_out.items()))
+            res = dv.detect_blooms(m["value"].astype(float), float(bcfg.get("percentile", 0.9)),
+                                   int(bcfg.get("min_days", 3)), int(bcfg.get("max_gap_days", 2)),
+                                   int(bcfg.get("interp_days", 3)), int(bcfg.get("min_clear_days", 2)))
+            if not res:
+                continue
+            triggers = {"upwelling": up_events,
+                        "dust": [{"start": e["start"], "end": e["end"]} for e in events.get("episodes", [])],
+                        "heatwave": (mhw_by_var.get(mcfg.get("variable", "sst"), {}).get(loc) or {}).get("events", [])}
+            dv.attach_triggers(res["events"], triggers, int(bcfg.get("trigger_lookback_days", 10)))
+            blooms[loc] = res
+        (out_dir / "blooms.json").write_text(json.dumps(blooms, separators=(",", ":")))
+        log("Blooms: " + ", ".join(f"{k} {len(v['events'])}" for k, v in blooms.items()))
+
+    if tide_payload:
+        (out_dir / "tides.json").write_text(json.dumps(tide_payload, separators=(",", ":")))
 
     meta = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "variables": config.get("variables", {}),
+        "variables": variables,
         "groups": {"physical": "Physical", "chemical": "Chemical", "biological": "Biological"},
         "areas": config.get("areas", {}),
         "points": config.get("points", {}),
         "sources": {k: {"label": v.get("label"), "description": v.get("description"), "product": v.get("product"),
-                        "dataset": v.get("dataset_id") or v.get("short_name") or v.get("station_id")}
+                        "dataset": v.get("dataset_id") or v.get("short_name") or v.get("station_id") or v.get("station")}
                     for k, v in config["sources"].items()},
         "series": [f"{v}__{l}" for v, l in sorted(merged_by_key)],
+        "forecasts": forecast_keys,
     }
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1))
     (out_dir / "latest.json").write_text(json.dumps(latest, indent=1))
@@ -443,5 +589,6 @@ def export(config: dict, db: Database, log=print):
         for f in site_dir.iterdir():
             if f.is_file():
                 shutil.copy2(f, out_dir.parent / f.name)
-    log(f"Exported {len(merged_by_key)} series and {len(events['episodes'])} dust episodes to {out_dir}")
+    log(f"Exported {len(merged_by_key)} series, {len(forecast_keys)} forecasts and "
+        f"{len(events['episodes'])} dust episodes to {out_dir}")
     return len(merged_by_key)
