@@ -576,11 +576,29 @@ class DerivedProductTests(unittest.TestCase):
         for m in range(120):
             t = datetime(2026, 9, 15, 0, 0) + timedelta(minutes=m)
             recs.append({"slevel": 0.6 + 0.001 * m, "stime": t.strftime("%Y-%m-%d %H:%M:%S"), "sensor": "rad"})
-            recs.append({"slevel": 5.0, "stime": t.strftime("%Y-%m-%d %H:%M:%S"), "sensor": "prs"})
+            recs.append({"slevel": 5.0, "stime": t.strftime("%Y-%m-%d %H:%M:%S"), "sensor": "pr1"})
+            recs.append({"slevel": 0.01, "stime": t.strftime("%Y-%m-%d %H:%M:%S"), "sensor": "pr2"})
         recs[40]["slevel"] = 3.0                                 # a spike
         h = parse_ioc_sealevel(recs)
         self.assertEqual(len(h), 2)
-        self.assertAlmostEqual(h.iloc[0], 0.6 + 0.001 * 29.5, delta=0.002)
+        self.assertAlmostEqual(h.iloc[0], 0.6 + 0.001 * 29.5, delta=0.002)     # radar chosen over pr1
+
+    def test_ioc_station_fallback(self):
+        from harvester.sources.stations import IocSeaLevel
+        src = IocSeaLevel("ioc_gibraltar", CONFIG["sources"]["ioc_gibraltar"], CONFIG)
+        asked = []
+        def fake_get(code, cur, stop):
+            asked.append(code)
+            if code == "gibr3":
+                return []
+            return [{"slevel": 1.0, "stime": (datetime(cur.year, cur.month, cur.day) + timedelta(minutes=m)).strftime("%Y-%m-%d %H:%M:%S"),
+                     "sensor": "rad"} for m in range(0, 60)]
+        src._get = fake_get
+        src.cfg = {**src.cfg, "pause_seconds": 0}
+        obs = src.fetch(date(2012, 3, 1), date(2012, 3, 1))
+        self.assertEqual(asked, ["gibr3", "gibr"])
+        self.assertEqual(len(obs), 1)
+        self.assertEqual(obs[0].location, "gibraltar_tide_gauge")
 
 
 class ExportNewProductsTests(unittest.TestCase):
@@ -611,7 +629,7 @@ class ExportNewProductsTests(unittest.TestCase):
         idx = pd.date_range(today - timedelta(days=120), today - timedelta(hours=1), freq="h")
         tt = ((idx - pd.Timestamp("2000-01-01")) / pd.Timedelta(hours=1)).values
         for t, v in zip(idx, 1.0 + 0.4 * np.cos(np.radians(28.9841042 * tt))):
-            obs.append(Observation("ioc_alge", "sea_level_hourly", "algeciras_gauge", t.to_pydatetime(), float(v), n_valid=1, n_total=1))
+            obs.append(Observation("ioc_gibraltar", "sea_level_hourly", "gibraltar_tide_gauge", t.to_pydatetime(), float(v), n_valid=1, n_total=1))
         db.upsert_observations(obs)
         cfg = {**CONFIG, "export": {**CONFIG["export"], "output_dir": f"{tmp.name}/pub", "site_dir": f"{tmp.name}/nosite"}}
         export(cfg, db, log=lambda *a: None, today=today.date())
@@ -630,7 +648,7 @@ class ExportNewProductsTests(unittest.TestCase):
         self.assertIn("gibraltar_20km", json.loads((out / "blooms.json").read_text()))
         tides = json.loads((out / "tides.json").read_text())
         self.assertGreater(len(tides["extremes"]), 10)
-        self.assertTrue((out / "daily" / "surge__algeciras_gauge.json").exists())
+        self.assertTrue((out / "daily" / "surge__gibraltar_tide_gauge.json").exists())
         meta = json.loads((out / "meta.json").read_text())
         self.assertIn("sst__gibraltar_20km", meta["forecasts"])
         db.close()
