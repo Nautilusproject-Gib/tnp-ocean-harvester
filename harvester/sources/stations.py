@@ -4,7 +4,7 @@
 - Open-Meteo historical weather (ERA5) and air quality (CAMS)
 - NASA AERONET sun photometer daily averages
 - Open-Meteo weather forecast (recent days and the week ahead)
-- IOC Sea Level Station Monitoring Facility tide gauges (Algeciras)
+- IOC Sea Level Station Monitoring Facility tide gauges (Gibraltar)
 """
 from __future__ import annotations
 
@@ -226,7 +226,7 @@ class OpenMeteoForecast(Source):
 IOC_URL = "https://www.ioc-sealevelmonitoring.org/service.php"
 
 
-def parse_ioc_sealevel(records: list, sensors=("rad", "prs", "flt", "enc", "pr1", "bub"),
+def parse_ioc_sealevel(records: list, sensors=("rad", "pr1", "prs", "flt", "enc", "bub"),
                        spike_m: float = 0.3, min_per_hour: int = 20) -> pd.Series:
     """IOC minute records [{slevel, stime, sensor}] -> hourly mean sea level (m), spikes removed.
 
@@ -257,25 +257,37 @@ def parse_ioc_sealevel(records: list, sensors=("rad", "prs", "flt", "enc", "pr1"
 
 
 class IocSeaLevel(Source):
+    """Tide gauge data from the IOC facility. `stations` lists station codes in order of preference:
+    a gauge that was replaced keeps a new code (Gibraltar: gibr3 now, gibr before), so each request
+    uses the first code that has data for those days."""
+
+    def _get(self, code, cur, stop):
+        params = {"query": "data", "format": "json", "code": code,
+                  "timestart": cur.isoformat(), "timestop": (stop + timedelta(days=1)).isoformat()}
+        r = self.http_get(IOC_URL, params=params, timeout=180)
+        try:
+            return r.json() if r.status_code < 400 else []
+        except ValueError:
+            return []
+
     def fetch(self, start: date, end: date):
         import time as _time
         today = datetime.utcnow().date()
         end = min(end, today)
         out = []
-        station, point = self.cfg["station"], self.cfg["point"]
+        stations = self.cfg.get("stations") or [self.cfg["station"]]
+        point = self.cfg["point"]
         step = int(self.cfg.get("request_days", 7))
         cur = start
         while cur <= end:
             stop = min(end, cur + timedelta(days=step - 1))
-            params = {"query": "data", "format": "json", "code": station,
-                      "timestart": cur.isoformat(), "timestop": (stop + timedelta(days=1)).isoformat()}
-            r = self.http_get(IOC_URL, params=params, timeout=180)
-            try:
-                records = r.json() if r.status_code < 400 else []
-            except ValueError:
-                records = []
-            hourly = parse_ioc_sealevel(records, tuple(self.cfg.get("sensors") or
-                                                        ("rad", "prs", "flt", "enc", "pr1", "bub")))
+            hourly = pd.Series(dtype="float64")
+            for code in stations:
+                records = self._get(code, cur, stop)
+                hourly = parse_ioc_sealevel(records, tuple(self.cfg.get("sensors") or
+                                                            ("rad", "pr1", "prs", "flt", "enc", "bub")))
+                if not hourly.empty:
+                    break
             hourly = hourly[(hourly.index >= pd.Timestamp(cur)) & (hourly.index < pd.Timestamp(stop + timedelta(days=1)))]
             for t, v in hourly.items():
                 out.append(Observation(self.code, "sea_level_hourly", point, t.to_pydatetime(), float(v),
