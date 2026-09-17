@@ -100,6 +100,15 @@ a{color:var(--data)}
 .key.gdot{border-top:2px dotted #3F8F2A}
 .key.fcast{border-top:2px dashed #0074A6}
 .key.tick{height:6px;border:0;background:#00A58A;width:10px}
+.moon{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text)}
+.moon svg{width:30px;height:30px;flex:none}
+.moon b{color:var(--ink)}
+.sn{display:grid;grid-template-columns:repeat(14,1fr);gap:2px;align-items:end;height:46px;margin-top:2px}
+.sn span{display:block;background:#76CCF9;min-height:3px;position:relative}
+.sn span.today{background:#0074A6}
+.sn-key{display:grid;grid-template-columns:repeat(14,1fr);gap:2px;font-size:10px;color:var(--muted);text-align:center;line-height:1.2}
+.sn-note{display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 8px;font-size:11px;color:var(--muted)}
+.sn-key svg.mini{width:11px;height:11px;display:inline-block;vertical-align:-1px}
 .events-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px}
 .events-grid .panel{padding:14px 16px}
 .events-grid .big{font-size:28px;font-weight:700;color:var(--ink)}
@@ -294,7 +303,7 @@ details ul{padding-left:18px;margin:8px 0}
           <li><strong>Atlantic–Mediterranean interface</strong>: fresher Atlantic water flows in over saltier Mediterranean water flowing out. We give the depth where salinity reaches 37.5, a common marker for the boundary between the two layers.</li>
           <li><strong>Upwelling</strong>: westerly winds blowing along the Spanish Alboran coast push surface water offshore (Ekman transport), and cooler, nutrient-rich water rises to replace it. The index is the offshore transport per kilometre of coast, calculated from hourly wind at Gibraltar. An event is 2 or more days above 500&nbsp;m³/s per km, about a steady 6&nbsp;m/s westerly.</li>
           <li><strong>Light on the seabed</strong>: daily light reaching 5, 10, 15 and 20&nbsp;m, estimated from satellite PAR and KD490 using the Morel et al. (2007) relation between KD490 and the attenuation of PAR. It is an area average, so sheltered or turbid spots will differ.</li>
-          <li><strong>Tide</strong>: times and heights of high and low water, predicted from a harmonic analysis of the last 12 months at the Algeciras tide gauge, in local time and above mean sea level. The surge is the measured sea level minus the predicted tide: the effect of wind and air pressure.</li>
+          <li><strong>Tide</strong>: times and heights of high and low water, predicted from a harmonic analysis of the last 12 months at the Gibraltar tide gauge, in local time and above mean sea level. The surge is the measured sea level minus the predicted tide: the effect of wind and air pressure. The moon phase is calculated for each day. Spring tides, with the biggest range, come a day or two after new and full moon, when the sun's and moon's pulls line up; neap tides, with the smallest range, follow the first and last quarter moons. The two-week strip shows each day's predicted range (highest high water minus lowest low water).</li>
           <li><strong>Forecasts</strong>: the next 5 days from the Copernicus Mediterranean forecast models (sea temperature, currents, waves) and Open-Meteo (wind). Sea surface temperature forecasts are adjusted by the average difference between the model and satellite over the last 14 days.</li>
           <li><strong>Waves</strong>: significant wave height off Europa Point, roughly the average height of the highest third of waves.</li>
           <li><strong>Wind</strong>: 10&nbsp;m wind at the airport. Easterly winds are the Levanter, westerlies the Poniente.</li>
@@ -363,7 +372,7 @@ const VARS = [
   {g:"physical", v:"mhw", special:"mhw", title:"Marine heatwave", loc:"area", chartVar:"sst"},
   {g:"physical", v:"depth", special:"depth", title:"Below the surface", loc:"area", chartVar:"temp_30m"},
   {g:"physical", v:"upwell", special:"upwelling", title:"Upwelling", loc:"gibraltar_airport", where:"Alboran coast", chartVar:"upwelling_index"},
-  {g:"physical", v:"tide", special:"tide", title:"Tide", loc:"algeciras_gauge", where:"Algeciras", chartVar:"surge"},
+  {g:"physical", v:"tide", special:"tide", title:"Tide", loc:"gibraltar_tide_gauge", where:"Gibraltar", chartVar:"surge"},
   {g:"physical", v:"par", title:"Light (PAR)", loc:"area", unit:"mol/m²/day", dp:0, up:"Brighter", down:"Duller", floor0:true, sat:true},
   {g:"physical", v:"seabed", special:"light", title:"Light on the seabed", loc:"area", chartVar:"par_10m"},
   {g:"physical", v:"kd490", title:"Attenuation Coefficient (KD490)", short:"KD490", loc:"area", unit:"m⁻¹", dp:3, up:"Murkier", down:"Clearer", floor0:true, sat:true},
@@ -388,8 +397,8 @@ const VARS = [
   {g:"physical", v:"par_10m", title:"Light reaching 10 m", loc:"area", unit:"mol/m²/day", dp:1, up:"Brighter", down:"Darker", floor0:true, sat:true, card:false},
   {g:"physical", v:"par_15m", title:"Light reaching 15 m", loc:"area", unit:"mol/m²/day", dp:1, up:"Brighter", down:"Darker", floor0:true, sat:true, card:false},
   {g:"physical", v:"par_20m", title:"Light reaching 20 m", loc:"area", unit:"mol/m²/day", dp:1, up:"Brighter", down:"Darker", floor0:true, sat:true, card:false},
-  {g:"physical", v:"surge", title:"Surge (weather effect on sea level)", loc:"algeciras_gauge", where:"Algeciras", unit:"m", dp:2, up:"Higher", down:"Lower", card:false},
-  {g:"physical", v:"sea_level", title:"Daily mean sea level", loc:"algeciras_gauge", where:"Algeciras", unit:"m", dp:2, up:"Higher", down:"Lower", card:false},
+  {g:"physical", v:"surge", title:"Surge (weather effect on sea level)", loc:"gibraltar_tide_gauge", where:"Gibraltar", unit:"m", dp:2, up:"Higher", down:"Lower", card:false},
+  {g:"physical", v:"sea_level", title:"Daily mean sea level", loc:"gibraltar_tide_gauge", where:"Gibraltar", unit:"m", dp:2, up:"Higher", down:"Lower", card:false},
   {g:"physical", v:"precip", title:"Rain", loc:"gibraltar_airport", where:"Airport", unit:"mm", dp:1, up:"Wetter", down:"Drier", floor0:true, card:false},
   // chemical
   {g:"chemical", v:"dust_sfc", title:"Saharan dust", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:0, up:"Dustier", down:"Less dust", floor0:true, threshold:50},
@@ -665,6 +674,81 @@ function tideCurve(t){
     <line x1="${x(now).toFixed(1)}" x2="${x(now).toFixed(1)}" y1="0" y2="${H}" stroke="#B7791F" stroke-width="1" vector-effect="non-scaling-stroke"/>
   </svg>`;
 }
+// Moon phase from the sun-moon elongation, using low-precision ecliptic longitudes
+// (Meeus, Astronomical Algorithms; good to about an hour for phase times).
+const SYNODIC = 29.530588853;
+function elongation(ms){
+  const n = (ms - Date.UTC(2000, 0, 1, 12)) / 864e5, rad = Math.PI / 180;
+  const g = (357.5291092 + 0.98560028 * n) * rad;
+  const lsun = 280.46646 + 0.98564736 * n + 1.914602 * Math.sin(g) + 0.019993 * Math.sin(2 * g) - 0.00569;
+  const Mm = (134.9633964 + 13.06499295 * n) * rad, D = (297.8501921 + 12.19074912 * n) * rad, F = (93.2720950 + 13.22935024 * n) * rad;
+  const lmoon = 218.3164477 + 13.17639648 * n + 6.288774 * Math.sin(Mm) + 1.274027 * Math.sin(2 * D - Mm) + 0.658314 * Math.sin(2 * D)
+    + 0.213618 * Math.sin(2 * Mm) - 0.185116 * Math.sin(g) - 0.114332 * Math.sin(2 * F) + 0.058793 * Math.sin(2 * D - 2 * Mm)
+    + 0.057066 * Math.sin(2 * D - g - Mm) + 0.053322 * Math.sin(2 * D + Mm) + 0.045758 * Math.sin(2 * D - g)
+    - 0.040923 * Math.sin(g - Mm) - 0.034720 * Math.sin(D) - 0.030383 * Math.sin(g + Mm) + 0.015327 * Math.sin(2 * D - 2 * F)
+    - 0.012528 * Math.sin(Mm + 2 * F) + 0.010980 * Math.sin(Mm - 2 * F) + 0.010675 * Math.sin(4 * D - Mm)
+    + 0.010034 * Math.sin(3 * Mm) + 0.008548 * Math.sin(4 * D - 2 * Mm);
+  return ((lmoon - lsun) % 360 + 360) % 360;
+}
+function phaseName(e){
+  // principal phases within about a day (12 deg) of the exact moment; otherwise crescent or gibbous
+  const near = x => Math.min(Math.abs(e - x), 360 - Math.abs(e - x)) <= 12;
+  if (near(0)) return "New moon";
+  if (near(90)) return "First quarter";
+  if (near(180)) return "Full moon";
+  if (near(270)) return "Last quarter";
+  if (e < 90) return "Waxing crescent";
+  if (e < 180) return "Waxing gibbous";
+  if (e < 270) return "Waning gibbous";
+  return "Waning crescent";
+}
+function moonInfo(ms){
+  const e = elongation(ms), theta = e * Math.PI / 180;
+  return {elong: e, age: e / 360 * SYNODIC, theta, lit: (1 - Math.cos(theta)) / 2,
+          name: phaseName(e), waxing: e < 180};
+}
+function nextPhase(ms, targetDeg){
+  // step forward hour by hour until the elongation passes the target
+  const rel = t => ((elongation(t) - targetDeg) % 360 + 360) % 360;
+  let prev = rel(ms), t = ms;
+  for (let i = 0; i < 24 * 31; i++){
+    t += 3600e3; const r = rel(t);
+    if (r < prev && prev > 300){
+      let lo = t - 3600e3, hi = t;
+      for (let k = 0; k < 12; k++){ const mid = (lo + hi) / 2; if (rel(mid) > 300) lo = mid; else hi = mid; }
+      return hi;
+    }
+    prev = r;
+  }
+  return null;
+}
+function moonSvg(m, cls){
+  const r = 13, c = 15;
+  const rx = Math.abs(Math.cos(m.theta)) * r, gibbous = m.lit > 0.5;
+  const outer = m.waxing ? 1 : 0, term = m.waxing ? (gibbous ? 1 : 0) : (gibbous ? 0 : 1);
+  const litPath = m.lit < 0.01 ? "" : m.lit > 0.99 ? `<circle cx="${c}" cy="${c}" r="${r}" fill="#F4E7B2"/>`
+    : `<path d="M${c},${c - r} A${r},${r} 0 0 ${outer} ${c},${c + r} A${rx.toFixed(2)},${r} 0 0 ${term} ${c},${c - r}Z" fill="#F4E7B2"/>`;
+  return `<svg viewBox="0 0 30 30" aria-hidden="true"${cls ? ` class="${cls}"` : ""}><circle cx="${c}" cy="${c}" r="${r}" fill="#2B3A40"/>${litPath}<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="#9FB3BA" stroke-width="1"/></svg>`;
+}
+function localDay(ms){ return new Date(ms).toLocaleDateString("en-CA", {timeZone:"Europe/Gibraltar"}); }
+function springNeap(t){
+  // daily tidal range (highest high minus lowest low) from the predicted high and low waters
+  const byDay = {};
+  t.extremes.forEach(e => { const d = localDay(Date.parse(e.time)); (byDay[d] = byDay[d] || []).push(e); });
+  const today = localDay(Date.now());
+  const days = Object.keys(byDay).sort().filter(d => d >= today).slice(0, 14)
+    .map(d => { const hs = byDay[d].filter(e => e.type === "high").map(e => e.height), ls = byDay[d].filter(e => e.type === "low").map(e => e.height);
+                return hs.length && ls.length ? [d, Math.max(...hs) - Math.min(...ls)] : null; }).filter(Boolean);
+  if (days.length < 7) return null;
+  const ranges = days.map(d => d[1]), lo = Math.min(...ranges), hi = Math.max(...ranges);
+  const r0 = ranges[0], r1 = ranges[1] != null ? ranges[1] : r0;
+  const pos = hi > lo ? (r0 - lo) / (hi - lo) : 0.5;
+  let state;
+  if (pos >= 0.8) state = "Spring tides";
+  else if (pos <= 0.2) state = "Neap tides";
+  else state = r1 > r0 ? "Tides growing towards springs" : "Tides shrinking towards neaps";
+  return {days, lo, hi, state, todayRange: r0};
+}
 function tideCard(cfg){
   const t = tides;
   if (!t || !t.extremes) return emptyCard(cfg, cfg.where, "Appears once the tide gauge record has been harvested.");
@@ -674,11 +758,35 @@ function tideCard(cfg){
   const n = next[0];
   const surge = t.surge_last_24h;
   const surgeText = surge == null ? "" : Math.abs(surge) < 0.03 ? "Weather is barely affecting sea level." : `Weather is ${surge > 0 ? "raising" : "lowering"} sea level by about ${fmt(Math.abs(surge) * 100, 0)} cm.`;
+  const m = moonInfo(now);
+  const nextFull = nextPhase(now, 180), nextNew = nextPhase(now, 0);
+  const upcoming = nextFull < nextNew ? ["Full moon", nextFull] : ["New moon", nextNew];
+  const sn = springNeap(t);
+  const moonMarks = {};
+  if (sn){
+    sn.days.forEach(([d]) => {
+      // mark the day on which each principal phase falls (local midnight to midnight)
+      const start = Date.parse(d + "T00:00:00Z") - 2 * 3600e3, e0 = elongation(start), e1 = elongation(start + 864e5);
+      const crosses = deg => ((e0 - deg + 360) % 360) > 300 && ((e1 - deg + 360) % 360) < 60;
+      const names = {0:"New moon", 90:"First quarter", 180:"Full moon", 270:"Last quarter"};
+      for (const deg of [0, 90, 180, 270]){
+        if (crosses(deg)) moonMarks[d] = `<span title="${names[deg]}">${moonSvg({theta: deg * Math.PI / 180, lit: (1 - Math.cos(deg * Math.PI / 180)) / 2, waxing: deg < 180}, "mini")}</span>`;
+      }
+    });
+  }
+  const strip = sn ? `
+    <div class="sn" role="img" aria-label="Daily tidal range for the next ${sn.days.length} days, from ${fmt(sn.lo, 1)} to ${fmt(sn.hi, 1)} m">${sn.days.map(([d, r], k) =>
+      `<span class="${k === 0 ? "today" : ""}" style="height:${(20 + 80 * (r - sn.lo) / ((sn.hi - sn.lo) || 1)).toFixed(0)}%" title="${d}: ${fmt(r, 2)} m range"></span>`).join("")}</div>
+    <div class="sn-key">${sn.days.map(([d]) => `<span>${moonMarks[d] || new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", {weekday:"narrow", timeZone:"UTC"})}</span>`).join("")}</div>
+    <div class="sn-note"><span>Tidal range, next 2 weeks</span><span>Moons mark new, quarter and full</span></div>` : "";
   return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
     <div class="label"><span>${cfg.title}</span><span class="where">${esc(cfg.where)}</span></div>
     <div class="value num">${fmtTime(n.time)}<span class="unit">next ${n.type} water</span></div>
     <div class="rows num">${next.map(e => `<div><span>${e.type === "high" ? "High" : "Low"} · ${fmtDay(e.time)} ${fmtTime(e.time)}</span><b>${signed(e.height, 2)} m</b></div>`).join("")}</div>
-    <p class="context">${surgeText}</p>
+    <div class="moon">${moonSvg(m)}<span><b>${m.name}</b>, ${fmt(m.lit * 100, 0)}% lit · ${upcoming[0].toLowerCase()} ${fmtDay(new Date(upcoming[1]).toISOString())} ${new Date(upcoming[1]).toLocaleDateString("en-GB", {day:"numeric", month:"short", timeZone:"Europe/Gibraltar"})}</span></div>
+    ${sn ? `<span class="chip ${sn.state === "Spring tides" ? "up" : sn.state === "Neap tides" ? "down" : "normal"}">${sn.state} · ${fmt(sn.todayRange, 2)} m range today</span>` : ""}
+    ${strip}
+    <p class="context">${surgeText} Spring tides follow new and full moons, when the sun and moon pull in line; neaps follow the quarter moons.</p>
     ${tideCurve(t)}
     <div class="foot"><span>Heights above mean sea level</span><span>Local time</span></div>
   </button>`;
@@ -1185,7 +1293,7 @@ function renderSources(){
     "Copernicus Atmosphere Monitoring Service (CAMS) global reanalysis (EAC4).",
     "NOAA National Centers for Environmental Information, Integrated Surface Database (Gibraltar Airport).",
     "NASA AERONET sun photometer network; we thank the principal investigators of the Málaga site.",
-    "Sea level data from the IOC Sea Level Station Monitoring Facility (Algeciras station, Puertos del Estado).",
+    "Sea level data from the Gibraltar tide gauge, operated by the National Oceanography Centre for the Gibraltar Port Authority, via the IOC Sea Level Station Monitoring Facility.",
     "Weather forecasts from Open-Meteo.com (CC BY 4.0).",
   ];
   $("sources").innerHTML = `<ul>${lines.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` +
