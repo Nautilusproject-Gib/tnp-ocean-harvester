@@ -796,6 +796,41 @@ class WildlifeTests(unittest.TestCase):
         self.assertEqual(self.raw["visibility"].tolist()[-1], "Hidden")
         self.assertEqual(str(self.raw["local_time"].iloc[0]), "2018-06-09 13:16:00")
 
+    def test_tidied_export_with_separate_date_column(self):
+        """A tidied export carries datetime AND date, and one column called group. Both used to
+        break the reader: two columns became local_time, and the top group went missing."""
+        csv = ("record_id,datetime,date,group,species,lat,lon,verified,public\n"
+               "6251,2018-06-09 13:16,2018-06-09,Dolphin,Common,36.135,-5.355,No,Visible\n"
+               "6252,2018-06-10 09:00,2018-06-10,Jellyfish,Mauve stinger,36.144,-5.358,Yes,Hidden\n")
+        raw = self.wl.read_records(csv, time_format=None)
+        self.assertEqual(list(raw["local_time"].astype(str)),
+                         ["2018-06-09 13:16:00", "2018-06-10 09:00:00"])
+        self.assertEqual(raw["group"].tolist(), ["Dolphin", "Jellyfish"])
+        c = self.wl.clean(raw, CONFIG, bbox=[-6.0, 35.6, -4.3, 36.6])
+        self.assertEqual(c["group"].tolist(), ["Dolphin", "Jellyfish"])
+        self.assertEqual(c["public"].tolist(), [True, False])
+        self.assertEqual(c["verified"].tolist(), [False, True])
+
+    def test_group_qualified_species_entries(self):
+        """"Blue" is a blue whale under Whales and a blue shark under Sharks. A qualified entry
+        matches only its own group; a bare entry still matches anywhere."""
+        wl = self.wl
+        df = pd.DataFrame({"group": ["Whales", "Sharks", "Jellyfish", "Marine Invertebrates"],
+                           "species": ["Blue", "Blue", "Moon", "Moon Crab"]})
+        cfg = {"sensitive": ["Whales|Blue"],
+               "gelatinous": {"water_column": ["Jellyfish|Moon"], "drifter": []},
+               "stinging": ["Jellyfish|Moon"],
+               "invasive": {"Marine Invertebrates|Moon Crab": "watch", "Blue": "watch"}}
+        t = wl.tag_species(df, cfg)
+        self.assertEqual(t["sensitive"].tolist(), [True, False, False, False])
+        self.assertEqual(t["gelatinous"].tolist(), ["", "", "water_column", ""])
+        # the bare "Blue" entry still matches both groups; the qualified key wins where it applies
+        self.assertEqual(t["invasive"].tolist(), ["watch", "watch", "", "watch"])
+        watch = {e["species"]: e for e in wl.invasive_watch(
+            t.assign(verified=False, local_date="2026-01-01", area="bay_of_gibraltar",
+                     cell_1km="36.1,-5.3"), cfg)}
+        self.assertEqual(watch["Moon Crab"]["records"], 1)     # named without the group prefix
+
     def test_cleaning_times_flags_and_area(self):
         c = self.clean
         self.assertEqual(len(c), 7)                                  # the Spanish inland record is dropped
