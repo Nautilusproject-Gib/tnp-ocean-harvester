@@ -408,8 +408,11 @@ def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out
         "calendar": calendar,
         "recent": {"days": recent_days, "records": int(len(recent)),
                    "by_group": {g: int(n) for g, n in recent["group"].value_counts().items()},
+                   # a record outside every area box has no area: null, not the NaN that json writes
+                   # out unquoted and every browser then refuses to parse
                    "list": [{"date": r.local_date, "group": r.group, "species": r.species,
-                             "area": r.area, "cell": r.cell_1km if not r.sensitive else None,
+                             "area": r.area if isinstance(r.area, str) else None,
+                             "cell": r.cell_1km if not r.sensitive else None,
                              "verified": bool(r.verified)}
                             for r in recent.sort_values("utc_time", ascending=False).head(25).itertuples()]},
         "gelatinous": {"events": gel_events, "status": gel_status,
@@ -424,11 +427,16 @@ def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out
                        "by_year": {str(y): int(n) for y, n in
                                    pd.to_datetime(cand["local_date"]).dt.year.value_counts().sort_index().items()},
                        "note": "from the app; the TNP strandings log is the record of truth"},
+        # An export with the User column stripped out carries no contributor counts at all, so this
+        # comes back empty rather than as a year of NaN.
         "effort": {"contributors_per_year": {str(y): int(v) for y, v in
-                                             records.groupby(day.dt.year)["day_contributors"].max().items()},
+                                             records.groupby(day.dt.year)["day_contributors"]
+                                             .max().dropna().items()},
                    "records_per_day_median": _r(records.groupby("local_date").size().median(), 1)},
     }
-    (out_dir / "wildlife.json").write_text(json.dumps(payload, separators=(",", ":")))
+    # allow_nan=False turns a stray NaN into a loud error here rather than a file that looks fine on
+    # the server and fails silently in the browser.
+    (out_dir / "wildlife.json").write_text(json.dumps(payload, separators=(",", ":"), allow_nan=False))
     return len(records)
 
 
