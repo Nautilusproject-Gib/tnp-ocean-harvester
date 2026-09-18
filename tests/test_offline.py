@@ -570,6 +570,32 @@ class DerivedProductTests(unittest.TestCase):
         gaps = np.diff([x.value for x in times]) / 3.6e12
         self.assertTrue(all(5 < g < 7.5 for g in gaps))          # semidiurnal: high and low about 6 h apart
 
+    def test_hourly_means_are_shifted_to_the_middle_of_the_hour(self):
+        """Hourly means are labelled at the start of the hour, so predictions must be shifted 30 minutes."""
+        import pandas as pd
+        from harvester.derived import EPOCH, tide_analysis
+        from harvester.sources.stations import parse_ioc_sealevel
+        idx = pd.date_range("2025-09-01", "2026-09-16 05:00", freq="5min")
+        t = ((idx - EPOCH) / pd.Timedelta(hours=1)).values
+        v = 1.0 + 0.35 * np.cos(np.radians(28.9841042 * t) - 1.0) + 0.12 * np.cos(np.radians(30.0 * t) - 0.4)
+        true = pd.Series(v, index=idx)
+        hourly = parse_ioc_sealevel([{"slevel": float(x), "stime": ts.strftime("%Y-%m-%d %H:%M:%S"), "sensor": "rad"}
+                                     for ts, x in zip(idx, v)], min_per_hour=10)
+        self.assertEqual(hourly.index[0].minute, 0)
+        def errors(offset):
+            _, _, pl = tide_analysis(hourly, datetime(2026, 9, 14), predict_days=1, sample_offset_minutes=offset)
+            out = []
+            for e in pl["extremes"]:
+                tp = pd.Timestamp(e["time"].replace("Z", ""))
+                w = true[(true.index > tp - timedelta(hours=3)) & (true.index < tp + timedelta(hours=3))]
+                if len(w) < 60:
+                    continue
+                peak = w.idxmax() if e["type"] == "high" else w.idxmin()
+                out.append((tp - peak).total_seconds() / 60)
+            return out
+        self.assertTrue(all(-32 < e < -24 for e in errors(0)), errors(0))       # the bug: half an hour early
+        self.assertTrue(all(abs(e) <= 6 for e in errors(30)), errors(30))       # fixed
+
     def test_ioc_parser(self):
         from harvester.sources.stations import parse_ioc_sealevel
         recs = []
