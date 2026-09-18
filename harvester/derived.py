@@ -364,9 +364,40 @@ def chart_datum_below_msl(fits: dict, step_minutes: int = 20) -> float | None:
     return -min(lows) if lows else None
 
 
+def drop_bad_days(hourly: pd.Series, max_offset: float = 0.5, window: int = 31, min_days: int = 5):
+    """Remove whole days whose level sits far from its neighbours: sensor faults and datum shifts.
+
+    A tide gauge can jump when the instrument is serviced or replaced. Daily medians are compared with
+    a centred 31-day median of daily medians, and a day more than `max_offset` away is dropped.
+    Returns (kept series, number of days dropped).
+    """
+    if hourly.empty:
+        return hourly, 0
+    daily = hourly.groupby(hourly.index.normalize()).median()
+    neighbours = daily.rolling(window, center=True, min_periods=min_days).median()
+    bad = daily.index[(daily - neighbours).abs() > max_offset]
+    if len(bad) == 0:
+        return hourly, 0
+    return hourly[~hourly.index.normalize().isin(bad)], int(len(bad))
+
+
+def high_pass(series: pd.Series, window: int = 31, min_days: int = 5) -> pd.Series:
+    """Remove slow drift by subtracting a centred running median of daily medians.
+
+    Storm surge lasts hours to days; a gauge's datum drifts over months. Taking the slow part out keeps
+    the surge series about the weather rather than about the instrument.
+    """
+    if series.empty:
+        return series
+    daily = series.groupby(series.index.normalize()).median()
+    slow = daily.rolling(window, center=True, min_periods=min_days).median().bfill().ffill()
+    return series - slow.reindex(series.index.normalize()).values
+
+
 def tide_analysis(hourly: pd.Series, now: datetime, predict_days: int = 7, fit_days: int = 365,
                   min_year_days: int = 300, sample_offset_minutes: float = 30.0,
-                  datum: str = "chart", chart_datum_offset_m: float | None = None):
+                  datum: str = "chart", chart_datum_offset_m: float | None = None,
+                  max_daily_offset_m: float = 0.5, level_baseline_days: int = 365):
     """Yearly harmonic fits -> residual (surge) for the whole record; latest fit -> predictions.
 
     `sample_offset_minutes` moves each reading to the middle of the period it averages. The harvester
@@ -380,6 +411,7 @@ def tide_analysis(hourly: pd.Series, now: datetime, predict_days: int = 7, fit_d
     s = s[~s.index.duplicated()]
     if sample_offset_minutes:
         s.index = s.index + pd.Timedelta(minutes=float(sample_offset_minutes))
+    s, n_dropped = drop_bad_days(s, float(max_daily_offset_m))
     if len(s) < 24 * 60:
         return None
     last = s.index.max()
@@ -410,10 +442,14 @@ def tide_analysis(hourly: pd.Series, now: datetime, predict_days: int = 7, fit_d
             pred = predict_tide(f, part.index, include_mean=False)
             pred = pred + (part - pred).mean()
         residual_parts.append(part - pred)
-    residual = pd.concat(residual_parts).sort_index()
+    residual = high_pass(pd.concat(residual_parts).sort_index())    # weather, not gauge drift
 
     g = s.groupby(s.index.normalize())
-    daily_level = g.mean().where(g.count() >= 20).dropna()
+    level_raw = g.mean().where(g.count() >= 20).dropna()
+    # published as an anomaly against the past year, because the gauge's own zero has moved over the
+    # record; a raw height chart would read as sea level change when it is really an instrument change
+    base = level_raw.rolling(int(level_baseline_days), center=True, min_periods=90).median().bfill().ffill()
+    daily_level = (level_raw - base).dropna()
     rg = residual.groupby(residual.index.normalize())
     daily_surge = rg.mean().where(rg.count() >= 20).dropna()
 
@@ -446,6 +482,7 @@ def tide_analysis(hourly: pd.Series, now: datetime, predict_days: int = 7, fit_d
         "fit": {"start": latest_fit["start"][:10], "end": latest_fit["end"][:10],
                 "constituents": [{"name": n, "amp": _r(c["amp"], 3), "phase": _r(c["phase"], 1)} for n, c in top]},
         "last_observation": last.strftime("%Y-%m-%dT%H:%MZ"),
+        "days_dropped": n_dropped,
         "surge_last_24h": _r(surge_now.mean(), 3) if len(surge_now) else None,
         "extremes": [{"time": t.strftime("%Y-%m-%dT%H:%MZ"), "type": k, "height": _r(h, 2)} for t, k, h in extremes],
         "curve": [[t.strftime("%Y-%m-%dT%H:%MZ"), _r(p, 3),

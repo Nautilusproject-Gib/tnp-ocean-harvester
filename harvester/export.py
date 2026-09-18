@@ -408,7 +408,8 @@ def export(config: dict, db: Database, log=print, today=None):
                                    predict_days=int(tides_cfg.get("predict_days", 7)),
                                    sample_offset_minutes=float(tides_cfg.get("sample_offset_minutes", 30)),
                                    datum=str(tides_cfg.get("datum", "chart")),
-                                   chart_datum_offset_m=tides_cfg.get("chart_datum_offset_m"))
+                                   chart_datum_offset_m=tides_cfg.get("chart_datum_offset_m"),
+                                   max_daily_offset_m=float(tides_cfg.get("max_daily_offset_m", 0.5)))
             if res:
                 level, surge, tide_payload = res
                 add("sea_level", tides_cfg["location"], tides_cfg["source"], level)
