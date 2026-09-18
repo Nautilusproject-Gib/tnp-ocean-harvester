@@ -301,7 +301,7 @@ details ul{padding-left:18px;margin:8px 0}
           <li><strong>Mixed layer depth</strong>: how deep the surface layer is stirred by wind and cooling. Deep winter mixing brings nutrients up; shallow summer layers trap plankton near the light.</li>
           <li><strong>Below the surface</strong>: sea temperature at 10, 20, 30, 50 and 100&nbsp;m, and salinity at 50, 100 and 200&nbsp;m, from the Copernicus physics model. Marine heatwaves are also worked out at 10, 30 and 50&nbsp;m, where seagrass, urchins and fish live.</li>
           <li><strong>Atlantic–Mediterranean interface</strong>: fresher Atlantic water flows in over saltier Mediterranean water flowing out. We give the depth where salinity reaches 37.5, a common marker for the boundary between the two layers.</li>
-          <li><strong>Upwelling</strong>: westerly winds blowing along the Spanish Alboran coast push surface water offshore (Ekman transport), and cooler, nutrient-rich water rises to replace it. The index is the offshore transport per kilometre of coast, calculated from hourly wind at Gibraltar. An event is 2 or more days above 500&nbsp;m³/s per km, about a steady 6&nbsp;m/s westerly.</li>
+          <li><strong>Upwelling</strong>: westerly winds blowing along the Spanish Alboran coast push surface water offshore (Ekman transport), and cooler, nutrient-rich water rises to replace it. The index is the offshore transport per kilometre of coast, calculated from hourly wind at Gibraltar. An event is 2 or more days above 500&nbsp;m³/s per km, about a steady 6&nbsp;m/s westerly. A negative index means the opposite: an easterly Levanter pushing surface water towards the coast, which suppresses upwelling (downwelling). So the index swings either side of zero with the wind, and both signs are normal.</li>
           <li><strong>Light on the seabed</strong>: daily light reaching 5, 10, 15 and 20&nbsp;m, estimated from satellite PAR and KD490 using the Morel et al. (2007) relation between KD490 and the attenuation of PAR. It is an area average, so sheltered or turbid spots will differ.</li>
           <li><strong>Tide</strong>: times and heights of high and low water, predicted from a harmonic analysis of the last 12 months at the Gibraltar tide gauge, in local time and above mean sea level. The surge is the measured sea level minus the predicted tide: the effect of wind and air pressure. The moon phase is calculated for each day. Spring tides, with the biggest range, come a day or two after new and full moon, when the sun's and moon's pulls line up; neap tides, with the smallest range, follow the first and last quarter moons. The two-week strip shows each day's predicted range (highest high water minus lowest low water).</li>
           <li><strong>Forecasts</strong>: the next 5 days from the Copernicus Mediterranean forecast models (sea temperature, currents, waves) and Open-Meteo (wind). Sea surface temperature forecasts are adjusted by the average difference between the model and satellite over the last 14 days.</li>
@@ -640,20 +640,23 @@ function upwellingCard(cfg){
   const u = upwelling;
   if (!u || !u.status) return emptyCard(cfg, cfg.where, "Appears once wind data has been processed.");
   const st = u.status;
+  const down = st.index != null && st.index <= -u.threshold;
   let chip;
   if (st.state === "upwelling") chip = `<span class="chip teal"><span aria-hidden="true">▼</span>Upwelling, day ${st.days}</span>`;
   else if (st.state === "favourable") chip = `<span class="chip teal"><span aria-hidden="true">●</span>Upwelling-favourable winds</span>`;
+  else if (down) chip = `<span class="chip down"><span aria-hidden="true">▲</span>Downwelling (easterly wind)</span>`;
   else chip = `<span class="chip normal"><span aria-hidden="true">●</span>No upwelling</span>`;
   const fcDays = (u.forecast || []).filter(d => d[1] > u.threshold).map(d => fmtDay(d[0] + "T12:00:00Z"));
   const last = u.events.length ? u.events[u.events.length - 1] : null;
   const sstResp = last && (last.response || []).find(r => r.variable === "sst" && r.location === "western_alboran");
   let context = st.state === "upwelling" ? "Westerly winds are pushing surface water offshore, drawing up cooler, nutrient-rich water along the Spanish coast."
-    : "Westerly winds along the Alboran coast draw up cool, nutrient-rich water.";
+    : down ? "Easterly winds (Levanter) are pushing surface water towards the coast, so warmer surface water piles up and nothing is drawn from below. Minus means onshore, plus means offshore."
+    : "Westerly winds along the Alboran coast draw up cool, nutrient-rich water. Minus means the wind is pushing water the other way.";
   if (last && st.state !== "upwelling") context += ` Last event: ${fmtShort(last.start)} ${last.start.slice(0,4)}, ${last.days} days${sstResp && sstResp.change != null ? `, sea ${sstResp.change < 0 ? "cooled" : "warmed"} by ${fmt(Math.abs(sstResp.change), 1)} °C` : ""}.`;
   const fcLine = u.forecast && u.forecast.length ? (fcDays.length ? `Favourable winds forecast: ${fcDays.join(", ")}.` : "No upwelling winds in the forecast.") : "";
   return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
     <div class="label"><span>${cfg.title}</span><span class="where">${esc(cfg.where)}</span></div>
-    <div class="value num">${fmt(st.index, 0)}<span class="unit">m³/s per km</span></div>
+    <div class="value num">${signed(st.index, 0)}<span class="unit">m³/s per km</span></div>
     ${chip}
     <p class="context">${context}</p>
     <p class="context">${fcLine}</p>
