@@ -841,8 +841,9 @@ export:
       # Preferred: a private link to the export, held in the GitHub secret named here. Nothing
       # personal is then committed to this public repository. The API key replaces this later.
       url_env: NEMO_CSV_URL
-      csv: nemo/nemo_export.csv     # fallback: only commit an export with the User and Notes columns removed
-      time_format: "%d/%m/%Y %H:%M"
+      csv: nemo/nemo_gibraltar_clean.csv   # fallback: only commit an export with the User and Notes columns removed
+      time_format:                  # blank = work the format out from the file (the clean export is
+                                    # ISO, 2018-06-09 13:16; the raw NEMO export is 09/06/2018 13:16)
       timezone: Europe/Gibraltar    # NEMO records local time; midnight means the time was not known
     bbox: [-6.0, 35.6, -4.3, 36.6]  # records outside this are set aside as not local
     recent_days: 30
