@@ -348,13 +348,20 @@ def tide_extremes(pred: pd.Series, min_separation_hours: float = 3.0):
 
 
 def tide_analysis(hourly: pd.Series, now: datetime, predict_days: int = 7, fit_days: int = 365,
-                  min_year_days: int = 300):
+                  min_year_days: int = 300, sample_offset_minutes: float = 30.0):
     """Yearly harmonic fits -> residual (surge) for the whole record; latest fit -> predictions.
+
+    `sample_offset_minutes` moves each reading to the middle of the period it averages. The harvester
+    stores hourly means labelled at the start of the hour, so a mean labelled 08:00 covers 08:00-08:59
+    and belongs at 08:30; without this the fitted tide, and every predicted high and low water, comes
+    out half an hour early.
 
     Returns (daily_mean_sea_level, daily_mean_surge, tides_payload) or None if there is too little data.
     """
     s = hourly.dropna().astype(float).sort_index()
     s = s[~s.index.duplicated()]
+    if sample_offset_minutes:
+        s.index = s.index + pd.Timedelta(minutes=float(sample_offset_minutes))
     if len(s) < 24 * 60:
         return None
     last = s.index.max()
