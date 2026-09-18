@@ -840,6 +840,41 @@ class WildlifeTests(unittest.TestCase):
         self.assertEqual(len(raw), 2)
         self.assertEqual(str(raw["local_time"].iloc[0]), "2018-06-09 13:16:00")
 
+    def test_export_of_a_file_with_no_user_column(self):
+        """A tidied export has no User column, so contributor counts are missing rather than zero.
+        That used to crash the export outright, and a record outside every area box wrote a bare
+        NaN into wildlife.json, which no browser will parse."""
+        import json
+        import tempfile
+        from harvester.export import export_wildlife
+        rows = ["record_id,datetime,group,species,lat,lon,verified,public"]
+        for i in range(6):
+            rows.append(f"{i},2026-09-0{i + 1} 10:0{i},Jellyfish,Mauve stinger,36.13,-5.35,No,Visible")
+        rows.append("99,2026-09-07 11:00,Fish,Sunfish,35.70,-5.90,No,Visible")   # far outside the boxes
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "nemo").mkdir()
+            (tmp / "nemo" / "export.csv").write_text("\n".join(rows))
+            wcfg = dict(CONFIG["export"]["wildlife"])
+            wcfg["source"] = {"csv": "nemo/export.csv", "time_format": None}
+            wcfg["private_dir"] = str(tmp / "private")
+            import harvester.export as ex
+            real_root = ex.Path(ex.__file__).resolve().parents[1]
+            csv_text = (tmp / "nemo" / "export.csv").read_text()
+            (real_root / "nemo").mkdir(exist_ok=True)
+            probe = real_root / "nemo" / "_test_export.csv"
+            probe.write_text(csv_text)
+            wcfg["source"]["csv"] = "nemo/_test_export.csv"
+            try:
+                n = export_wildlife(CONFIG, wcfg, {}, None, tmp, log=lambda *a: None)
+            finally:
+                probe.unlink()
+            self.assertEqual(n, 7)
+            payload = json.loads((tmp / "wildlife.json").read_text())   # would raise on a bare NaN
+            self.assertEqual(payload["effort"]["contributors_per_year"], {})
+            outside = [r for r in payload["recent"]["list"] if r["area"] is None]
+            self.assertEqual(len(outside), 1)
+
     def test_cleaning_times_flags_and_area(self):
         c = self.clean
         self.assertEqual(len(c), 7)                                  # the Spanish inland record is dropped
