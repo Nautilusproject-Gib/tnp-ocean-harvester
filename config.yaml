@@ -656,6 +656,7 @@ sources:
     earliest: "2005-01-01"
     chunk_days: 60
     request_days: 3                  # the older gauge reports every 10 seconds, so keep requests small
+    retry_daily: true                # if a window comes back empty, ask again one day at a time
     lookback_days: 3
 
   # ---------------- CAMS reanalysis (free ADS account) ----------------
@@ -711,7 +712,7 @@ variables:
   par_15m:      {group: physical, name: "Light (PAR) reaching 15 m", unit: einstein m-2 day-1, valid_range: [0, 130]}
   par_20m:      {group: physical, name: "Light (PAR) reaching 20 m", unit: einstein m-2 day-1, valid_range: [0, 130]}
   sea_level_hourly: {group: physical, name: "Sea level (hourly, gauge datum)", unit: m}
-  sea_level:    {group: physical, name: "Daily mean sea level (gauge datum)", unit: m}
+  sea_level:    {group: physical, name: "Daily mean sea level, against the past year", unit: m, valid_range: [-1, 1]}
   surge:        {group: physical, name: "Surge (sea level minus predicted tide)", unit: m, valid_range: [-1.5, 1.5]}
   mld:          {group: physical, name: "Mixed layer depth (model)", unit: m, valid_range: [0, 1000]}
   wave_hs:      {group: physical, name: "Significant wave height", unit: m, valid_range: [0, 20]}
@@ -825,6 +826,7 @@ export:
     predict_days: 15                 # a full spring-neap cycle for the dashboard
     sample_offset_minutes: 30        # hourly means are labelled at the start of the hour, so they sit 30 min later
     datum: chart                     # heights above chart datum, as printed tide tables use ("msl" for mean sea level)
+    max_daily_offset_m: 0.5          # drop days more than this from their neighbours (sensor faults, datum jumps)
     # chart_datum_offset_m: 0.48     # set this to the published depth of chart datum below mean sea level
                                      # if the dashboard's own estimate does not match the tide tables
 
