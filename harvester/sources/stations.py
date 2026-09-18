@@ -232,6 +232,9 @@ def parse_ioc_sealevel(records: list, sensors=("rad", "pr1", "prs", "flt", "enc"
 
     Uses the first sensor in `sensors` that has data. A reading more than `spike_m` from the
     15-minute running median is dropped. An hour needs `min_per_hour` good readings.
+
+    Each mean is labelled with the start of its hour, so the value labelled 08:00 covers 08:00-08:59
+    and represents 08:30. The tide analysis shifts them to the middle of the hour before fitting.
     """
     if not isinstance(records, list) or not records:
         return pd.Series(dtype="float64")                  # the service answers errors with a JSON object
