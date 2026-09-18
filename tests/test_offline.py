@@ -621,6 +621,59 @@ class DerivedProductTests(unittest.TestCase):
         self.assertTrue(all(-32 < e < -24 for e in errors(0)), errors(0))       # the bug: half an hour early
         self.assertTrue(all(abs(e) <= 6 for e in errors(30)), errors(30))       # fixed
 
+    def test_gauge_quality_control(self):
+        """A sensor jump must not reach the fit, the surge or the published sea level."""
+        import pandas as pd
+        from harvester.derived import EPOCH, drop_bad_days, high_pass, tide_analysis
+        idx = pd.date_range("2023-01-01", "2026-09-17 23:00", freq="h")
+        t = ((idx - EPOCH) / pd.Timedelta(hours=1)).values
+        tide = 0.33 * np.cos(np.radians(28.9841042 * t) - 1.2) + 0.12 * np.cos(np.radians(30.0 * t) - 0.5)
+        s = pd.Series(1.8 + tide, index=idx)
+        s.loc["2024-05-01":"2024-05-03"] += 2.5                      # three days of sensor fault
+        s.loc["2025-06-01":] += 0.22                                 # gauge serviced: datum step
+        kept, dropped = drop_bad_days(s, max_offset=0.5)
+        self.assertEqual(dropped, 3)
+        self.assertNotIn(pd.Timestamp("2024-05-02 12:00"), kept.index)
+        self.assertIn(pd.Timestamp("2025-06-02 12:00"), kept.index)   # a step is kept, not dropped
+        level, surge, payload = tide_analysis(s, datetime(2026, 9, 17, 12), predict_days=2,
+                                              sample_offset_minutes=0)
+        self.assertEqual(payload["days_dropped"], 3)
+        self.assertLess(surge.abs().max(), 0.2)                       # no 2.5 m or 0.22 m "surge"
+        self.assertLess(abs(surge.loc["2025-06-15"]), 0.05)           # the step is not weather
+        self.assertLess(level.abs().max(), 0.2)                       # anomaly, so the step does not show
+        self.assertAlmostEqual(level.mean(), 0.0, delta=0.02)
+
+    def test_high_pass_keeps_short_events(self):
+        import pandas as pd
+        from harvester.derived import high_pass
+        idx = pd.date_range("2024-01-01", "2024-12-31 23:00", freq="h")
+        drift = np.linspace(0, 0.3, len(idx))                         # slow gauge drift
+        s = pd.Series(drift, index=idx)
+        s.loc["2024-07-10":"2024-07-12"] += 0.4                       # a three-day surge
+        out = high_pass(s)
+        self.assertLess(abs(out.loc["2024-03-01 12:00"]), 0.03)       # drift removed
+        self.assertGreater(out.loc["2024-07-11 12:00"], 0.3)          # event kept
+
+    def test_ioc_retries_day_by_day(self):
+        """The old gauge reports every few seconds; a multi-day request can come back empty."""
+        from harvester.sources.stations import IocSeaLevel
+        cfg = {**CONFIG["sources"]["ioc_gibraltar"], "request_days": 3, "pause_seconds": 0}
+        src = IocSeaLevel("ioc_gibraltar", cfg, CONFIG)
+        asked = []
+        def fake_get(code, cur, stop):
+            asked.append((code, str(cur), str(stop)))
+            if code == "gibr3" or stop != cur:
+                return []                                             # only single-day requests answer
+            return [{"slevel": 1.0 + m / 10000, "sensor": "rad",
+                     "stime": (datetime(cur.year, cur.month, cur.day) + timedelta(minutes=m)).strftime("%Y-%m-%d %H:%M:%S")}
+                    for m in range(0, 180)]
+        src._get = fake_get
+        obs = src.fetch(date(2012, 3, 1), date(2012, 3, 3))
+        self.assertEqual(asked[0][0], "gibr3")
+        self.assertEqual(len([a for a in asked if a[0] == "gibr" and a[1] == a[2]]), 3)
+        self.assertEqual(len(obs), 9)                                 # three hours a day, three days
+        self.assertEqual(obs[0].location, "gibraltar_tide_gauge")
+
     def test_ioc_parser(self):
         from harvester.sources.stations import parse_ioc_sealevel
         recs = []
