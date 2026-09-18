@@ -824,6 +824,9 @@ export:
     location: gibraltar_tide_gauge
     predict_days: 15                 # a full spring-neap cycle for the dashboard
     sample_offset_minutes: 30        # hourly means are labelled at the start of the hour, so they sit 30 min later
+    datum: chart                     # heights above chart datum, as printed tide tables use ("msl" for mean sea level)
+    # chart_datum_offset_m: 0.48     # set this to the published depth of chart datum below mean sea level
+                                     # if the dashboard's own estimate does not match the tide tables
 
   forecast:
     bias_correct:
