@@ -560,7 +560,7 @@ class DerivedProductTests(unittest.TestCase):
         self.assertAlmostEqual(fit["constituents"]["M2"]["amp"], 0.32, places=2)
         self.assertAlmostEqual(fit["constituents"]["S2"]["amp"], 0.11, places=2)
         self.assertAlmostEqual(fit["mean"], 1.8, places=2)
-        level_d, surge_d, payload = tide_analysis(s, datetime(2024, 12, 31, 12), predict_days=3)
+        level_d, surge_d, payload = tide_analysis(s, datetime(2024, 12, 31, 12), predict_days=3, datum="msl")
         self.assertGreater(surge_d.loc["2024-12-21"], 0.2)
         self.assertLess(abs(surge_d.loc["2024-06-01"]), 0.05)
         highs = [e for e in payload["extremes"] if e["type"] == "high"]
@@ -569,6 +569,31 @@ class DerivedProductTests(unittest.TestCase):
         times = [pd.Timestamp(e["time"]) for e in payload["extremes"]]
         gaps = np.diff([x.value for x in times]) / 3.6e12
         self.assertTrue(all(5 < g < 7.5 for g in gaps))          # semidiurnal: high and low about 6 h apart
+
+    def test_chart_datum_heights(self):
+        """Heights should be given above chart datum by default, as printed tide tables do."""
+        import pandas as pd
+        from harvester.derived import EPOCH, tide_analysis
+        idx = pd.date_range("2013-01-01", "2024-12-31 23:00", freq="h")
+        t = ((idx - EPOCH) / pd.Timedelta(hours=1)).values
+        amps = {28.9841042: 0.35, 30.0: 0.11, 28.4397295: 0.07, 15.0410686: 0.04, 13.9430356: 0.03}
+        tide = sum(a * np.cos(np.radians(w * t) - 1.0) for w, a in amps.items())
+        s = pd.Series(1.9 + tide, index=idx)
+        _, _, chart = tide_analysis(s, datetime(2024, 12, 20, 12), predict_days=6, datum="chart", sample_offset_minutes=0)
+        _, _, msl = tide_analysis(s, datetime(2024, 12, 20, 12), predict_days=6, datum="msl", sample_offset_minutes=0)
+        z0 = chart["chart_datum_below_msl"]
+        self.assertAlmostEqual(z0, sum(amps.values()), delta=0.06)      # close to the lowest astronomical tide
+        self.assertEqual(chart["mean_sea_level"], z0)
+        self.assertTrue(all(e["height"] >= 0 for e in chart["extremes"]))
+        lows = [e["height"] for e in chart["extremes"] if e["type"] == "low"]
+        self.assertLess(min(lows), 0.1)                                 # lowest tides sit close to the datum
+        for a1, b1 in zip(chart["extremes"], msl["extremes"]):
+            self.assertAlmostEqual(a1["height"] - b1["height"], z0, delta=0.02)
+            self.assertEqual(a1["time"], b1["time"])                    # only the reference level changes
+        # a published datum can be forced
+        _, _, forced = tide_analysis(s, datetime(2024, 12, 20, 12), predict_days=2, chart_datum_offset_m=0.48,
+                                     sample_offset_minutes=0)
+        self.assertEqual(forced["chart_datum_below_msl"], 0.48)
 
     def test_hourly_means_are_shifted_to_the_middle_of_the_hour(self):
         """Hourly means are labelled at the start of the hour, so predictions must be shifted 30 minutes."""
