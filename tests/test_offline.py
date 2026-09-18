@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -766,6 +767,105 @@ class ExportNewProductsTests(unittest.TestCase):
         self.assertIn("sst__gibraltar_20km", meta["forecasts"])
         db.close()
         tmp.cleanup()
+
+
+NEMO_SAMPLE = """ID,Reported,Parent,Species,User,Group,Lat,Lon,Notes,Verified
+101,09/06/2018 13:16,Fish,Grey Triggerfish,100663 - Anonymous,-,36.135462,-5.354981,,No,Visible
+102,21/07/2024 00:00,Jellyfish,Mauve stinger,100663 - Anonymous,-,36.121442,-5.355472,Lots of them,No,Visible
+103,21/07/2024 14:30,Jellyfish,Portuguese Man O' War,200001 - Anonymous,-,36.121442,-5.355472,,Yes,Visible
+104,21/07/2024 15:00,Jellyfish,Mauve stinger,200001 - Anonymous,-,36.12,-5.35,,No,Visible
+105,26/10/2025 02:30,Marine Invertebrates,Blue crab,300002 - Anonymous,-,36.14,-5.36,Photo attached,Yes,Visible
+106,15/03/2026 12:00,Turtle,Loggerhead,300002 - Anonymous,-,36.0,-5.6,Washed up dead on the beach,No,Visible
+107,15/03/2026 12:05,Dolphin,Common,300002 - Anonymous,-,40.000000,-3.000000,Holiday sighting,No,Visible
+108,02/08/2026 11:00,null,Unknown,107905 - Nemo Legacy,-,36.30,-5.30,,No,Hidden
+"""
+
+
+class WildlifeTests(unittest.TestCase):
+    def setUp(self):
+        import yaml
+        from harvester import wildlife as wl
+        self.wl = wl
+        self.species = yaml.safe_load((ROOT / "species.yaml").read_text())
+        self.raw = wl.read_records(NEMO_SAMPLE)
+        self.clean = wl.tag_species(wl.clean(self.raw, CONFIG, bbox=[-6.0, 35.6, -4.3, 36.6]), self.species)
+
+    def test_reads_the_unnamed_last_column(self):
+        self.assertIn("visibility", self.raw.columns)
+        self.assertEqual(len(self.raw), 8)
+        self.assertEqual(self.raw["visibility"].tolist()[-1], "Hidden")
+        self.assertEqual(str(self.raw["local_time"].iloc[0]), "2018-06-09 13:16:00")
+
+    def test_cleaning_times_flags_and_area(self):
+        c = self.clean
+        self.assertEqual(len(c), 7)                                  # the Spanish inland record is dropped
+        self.assertFalse(c.loc[c.record_id == "102", "time_known"].iloc[0])   # midnight means unknown
+        self.assertTrue(c.loc[c.record_id == "103", "time_known"].iloc[0])
+        # summer time is two hours ahead of UTC, winter one
+        self.assertEqual(str(c.loc[c.record_id == "103", "utc_time"].iloc[0]), "2024-07-21 12:30:00")
+        # 02:30 on 26 Oct 2025 happens twice (the clocks go back); we take the first, summer time
+        self.assertEqual(str(c.loc[c.record_id == "105", "utc_time"].iloc[0]), "2025-10-26 00:30:00")
+        self.assertEqual(c.loc[c.record_id == "106", "area"].iloc[0], "strait_of_gibraltar")
+        self.assertEqual(c.loc[c.record_id == "108", "group"].iloc[0], "Unrecorded")   # legacy "null"
+        self.assertFalse(bool(c.loc[c.record_id == "108", "public"].iloc[0]))
+        self.assertFalse(bool(c.loc[c.record_id == "108", "area_exact"].iloc[0]))      # outside every box
+        self.assertEqual(c.loc[c.record_id == "108", "area"].iloc[0], "gibraltar_eastside")  # nearest box
+        self.assertEqual(int(c.loc[c.record_id == "103", "day_contributors"].iloc[0]), 2)
+        self.assertEqual(int(c.loc[c.record_id == "103", "day_records"].iloc[0]), 3)
+        self.assertNotIn("user", c.columns)                          # identities do not survive cleaning
+
+    def test_species_flags(self):
+        c = self.clean.set_index("record_id")
+        self.assertEqual(c.loc["103", "gelatinous"], "drifter")
+        self.assertEqual(c.loc["102", "gelatinous"], "water_column")
+        self.assertTrue(bool(c.loc["102", "stinging"]))
+        self.assertEqual(c.loc["105", "invasive"], "established")
+        self.assertTrue(bool(c.loc["106", "sensitive"]))             # turtles are not published precisely
+
+    def test_daily_index_and_events(self):
+        index = self.wl.daily_index(self.clean, self.clean["gelatinous"] != "", min_share_records=1)
+        day = pd.Timestamp("2024-07-21")
+        self.assertEqual(int(index.loc[day, "count"]), 3)
+        self.assertAlmostEqual(index.loc[day, "share"], 1.0)
+        events, status = self.wl.bloom_events(index, min_count=3, min_share=0.4, min_days=1)
+        self.assertEqual([e["start"] for e in events], ["2024-07-21"])
+        self.assertEqual(events[0]["records"], 3)
+        self.assertEqual(status["state"], "none")
+
+    def test_invasive_watch_uses_verified_records(self):
+        watch = {e["species"]: e for e in self.wl.invasive_watch(self.clean, self.species)}
+        crab = watch["Blue crab"]
+        self.assertEqual(crab["status"], "established")
+        self.assertEqual(crab["records"], 1)
+        self.assertEqual(crab["first_verified"], "2025-10-26")
+        self.assertEqual(watch["Lionfish"]["records"], 0)            # listed but never recorded
+        self.assertIsNone(watch["Lionfish"]["first_verified"])
+
+    def test_strandings_from_notes_and_log(self):
+        cand = self.wl.stranding_candidates(self.clean)
+        self.assertEqual(cand["record_id"].tolist(), ["106"])
+        log = pd.DataFrame([{"date": "2026-03-15", "species": "Loggerhead", "lat": 36.001, "lon": -5.601},
+                            {"date": "2026-01-02", "species": "Common", "lat": 36.1, "lon": -5.35}])
+        out = self.wl.match_strandings(cand, log)
+        self.assertEqual(len(out["matched"]), 1)
+        self.assertEqual(out["app_only"], [])
+        self.assertEqual(out["log_only"], [1])                       # in the log, never reported in the app
+
+    def test_conditions_and_tide_state(self):
+        from harvester.derived import EPOCH, fit_tide
+        idx = pd.date_range("2024-01-01", "2026-12-31", freq="D")
+        sst = pd.DataFrame({"value": 19 + 3 * np.cos(2 * np.pi * (idx.dayofyear - 232) / 365), "source": "x"}, index=idx)
+        hours = pd.date_range("2024-01-01", "2024-12-31 23:00", freq="h")
+        t = ((hours - EPOCH) / pd.Timedelta(hours=1)).values
+        fit = fit_tide(pd.Series(1 + 0.3 * np.cos(np.radians(28.9841042 * t)), index=hours))
+        out = self.wl.attach_conditions(self.clean, {("sst", "bay_of_gibraltar"): sst},
+                                        [{"variable": "sst", "location": "area"}], fit)
+        row = out.set_index("record_id").loc["103"]
+        self.assertAlmostEqual(row["sst"], float(sst.loc["2024-07-21", "value"]), places=2)
+        self.assertIsNotNone(row["sst_anomaly"])
+        self.assertTrue(-7 <= row["hours_from_high"] <= 7)
+        self.assertIsNone(out.set_index("record_id").loc["102", "hours_from_high"])   # time unknown
+        self.assertEqual(out.set_index("record_id").loc["103", "moon_illumination_pct"], 100)  # full moon that day
 
 
 if __name__ == "__main__":
