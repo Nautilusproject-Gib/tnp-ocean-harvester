@@ -3,3 +3,4 @@ public/
 __pycache__/
 *.pyc
 .env
+private/
