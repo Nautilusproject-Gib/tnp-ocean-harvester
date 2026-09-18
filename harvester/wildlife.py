@@ -94,10 +94,15 @@ def read_records(text_or_rows, time_format: str | None = "%d/%m/%Y %H:%M") -> pd
         extra = [c for c in df.columns if c.startswith("unnamed")]
         if extra:
             df = df.rename(columns={extra[0]: "visibility"})
+    raw_time = df["local_time"]
     if time_format:
-        df["local_time"] = pd.to_datetime(df["local_time"], format=time_format, errors="coerce")
+        df["local_time"] = pd.to_datetime(raw_time, format=time_format, errors="coerce")
+        # A configured format that does not fit the file would silently throw every record away, so
+        # fall back to working the format out rather than publishing an empty wildlife section.
+        if len(df) and df["local_time"].isna().mean() > 0.5:
+            df["local_time"] = pd.to_datetime(raw_time, errors="coerce")
     else:
-        df["local_time"] = pd.to_datetime(df["local_time"], errors="coerce")
+        df["local_time"] = pd.to_datetime(raw_time, errors="coerce")
     return df.dropna(subset=["local_time"])
 
 
