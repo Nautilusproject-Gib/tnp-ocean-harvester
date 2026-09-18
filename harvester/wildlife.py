@@ -34,12 +34,18 @@ def _r(x, nd=3):
 # ------------------------------------------------------------------------------------------------
 COLUMN_ALIASES = {
     "id": "record_id", "record_id": "record_id",
-    "reported": "local_time", "sighted": "local_time", "datetime": "local_time", "date": "local_time",
+    "reported": "local_time", "sighted": "local_time", "datetime": "local_time",
+    "local_time": "local_time", "date": "local_time",
     "parent": "group", "group": "nemo_group", "category": "group",
     "species": "species", "user": "user", "notes": "notes", "comment": "notes",
     "lat": "lat", "latitude": "lat", "lon": "lon", "lng": "lon", "longitude": "lon",
-    "verified": "verified", "visibility": "visibility", "condition": "condition",
+    "verified": "verified", "visibility": "visibility", "public": "visibility",
+    "condition": "condition",
 }
+
+# An export can carry several columns that all look like the sighting time: a full timestamp, a bare
+# date, sometimes both. Keep the richest one and drop the rest, in this order.
+TIME_PREFERENCE = ("reported", "sighted", "datetime", "local_time", "date")
 
 
 def _col(df: pd.DataFrame, name: str, default="") -> pd.Series:
@@ -69,9 +75,21 @@ def read_records(text_or_rows, time_format: str | None = "%d/%m/%Y %H:%M") -> pd
     else:
         df = pd.DataFrame(list(text_or_rows))
     df.columns = [str(c).strip().lstrip("﻿") for c in df.columns]
+    # Drop the spare time columns before renaming, or two of them become "local_time" and every
+    # later lookup gets a two-column frame instead of a series.
+    lowered = {c: str(c).strip().lower() for c in df.columns}
+    timeish = [c for c, low in lowered.items() if COLUMN_ALIASES.get(low) == "local_time"]
+    if len(timeish) > 1:
+        rank = {name: i for i, name in enumerate(TIME_PREFERENCE)}
+        keep = min(timeish, key=lambda c: rank.get(lowered[c], len(rank)))
+        df = df.drop(columns=[c for c in timeish if c != keep])
     # the export's header is one name short, so the last column arrives unnamed
     df = df.rename(columns={c: COLUMN_ALIASES.get(str(c).strip().lower(), str(c).strip().lower())
                             for c in df.columns})
+    # NEMO's own export splits the top group ("parent") from the sub-group ("group"); a tidied
+    # export usually has one column called "group" holding the top group. Use whichever arrived.
+    if "group" not in df.columns and "nemo_group" in df.columns:
+        df = df.rename(columns={"nemo_group": "group"})
     if "visibility" not in df.columns:
         extra = [c for c in df.columns if c.startswith("unnamed")]
         if extra:
@@ -164,20 +182,48 @@ def clean(df: pd.DataFrame, config: dict, bbox=None) -> pd.DataFrame:
     return out.sort_values("utc_time").reset_index(drop=True)
 
 
+def _keys(df: pd.DataFrame) -> pd.Series:
+    """"Group|Species" for each record, the key a group-qualified list entry is written against."""
+    return _col(df, "group", "").astype(str).str.strip() + "|" + df["species"].astype(str).str.strip()
+
+
+def matches(df: pd.DataFrame, entries) -> pd.Series:
+    """Which records match a species.yaml list.
+
+    NEMO names a species relative to its group, so a common dolphin is recorded as "Common" and a
+    fin whale as "Fin". Those bare names collide across groups: "Blue" is a blue whale under Whales
+    and a blue shark under Sharks. An entry written as "Whales|Blue" matches only in that group; a
+    bare entry still matches any group, so short lists of unambiguous names stay readable.
+    """
+    entries = set(entries or [])
+    qualified = {e for e in entries if "|" in e}
+    bare = entries - qualified
+    hit = df["species"].astype(str).str.strip().isin(bare)
+    if qualified:
+        hit = hit | _keys(df).isin(qualified)
+    return hit
+
+
+def lookup(df: pd.DataFrame, mapping: dict, default="") -> pd.Series:
+    """Values from a species.yaml mapping, group-qualified keys taking precedence over bare ones."""
+    mapping = mapping or {}
+    qualified = {k: v for k, v in mapping.items() if "|" in k}
+    bare = {k: v for k, v in mapping.items() if "|" not in k}
+    out = df["species"].astype(str).str.strip().map(bare)
+    if qualified:
+        out = _keys(df).map(qualified).fillna(out)
+    return out.fillna(default)
+
+
 def tag_species(df: pd.DataFrame, species_cfg: dict) -> pd.DataFrame:
     """Add the flags from species.yaml: gelatinous type, invasive status, sting risk, sensitivity."""
     gel = species_cfg.get("gelatinous", {}) or {}
-    drifters = set(gel.get("drifter") or [])
-    water = set(gel.get("water_column") or [])
-    invasive = species_cfg.get("invasive", {}) or {}
-    stinging = set(species_cfg.get("stinging") or [])
-    sensitive = set(species_cfg.get("sensitive") or [])
     df = df.copy()
-    df["gelatinous"] = np.where(df["species"].isin(drifters), "drifter",
-                                np.where(df["species"].isin(water), "water_column", ""))
-    df["invasive"] = df["species"].map(invasive).fillna("")
-    df["stinging"] = df["species"].isin(stinging)
-    df["sensitive"] = df["species"].isin(sensitive)
+    df["gelatinous"] = np.where(matches(df, gel.get("drifter")), "drifter",
+                                np.where(matches(df, gel.get("water_column")), "water_column", ""))
+    df["invasive"] = lookup(df, species_cfg.get("invasive", {}))
+    df["stinging"] = matches(df, species_cfg.get("stinging"))
+    df["sensitive"] = matches(df, species_cfg.get("sensitive"))
     return df
 
 
@@ -304,8 +350,9 @@ def invasive_watch(records: pd.DataFrame, species_cfg: dict) -> list:
     """
     listed = species_cfg.get("invasive", {}) or {}
     out = []
-    for species, status in listed.items():
-        sub = records[records["species"] == species]
+    for key, status in listed.items():
+        sub = records[matches(records, [key])]
+        species = key.split("|", 1)[1] if "|" in key else key      # the group is a filter, not a name
         ver = sub[sub["verified"]]
         entry = {"species": species, "status": status, "records": int(len(sub)),
                  "first_reported": sub["local_date"].min() if len(sub) else None,
