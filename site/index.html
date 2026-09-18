@@ -303,7 +303,7 @@ details ul{padding-left:18px;margin:8px 0}
           <li><strong>Atlantic–Mediterranean interface</strong>: fresher Atlantic water flows in over saltier Mediterranean water flowing out. We give the depth where salinity reaches 37.5, a common marker for the boundary between the two layers.</li>
           <li><strong>Upwelling</strong>: westerly winds blowing along the Spanish Alboran coast push surface water offshore (Ekman transport), and cooler, nutrient-rich water rises to replace it. The index is the offshore transport per kilometre of coast, calculated from hourly wind at Gibraltar. An event is 2 or more days above 500&nbsp;m³/s per km, about a steady 6&nbsp;m/s westerly. A negative index means the opposite: an easterly Levanter pushing surface water towards the coast, which suppresses upwelling (downwelling). So the index swings either side of zero with the wind, and both signs are normal.</li>
           <li><strong>Light on the seabed</strong>: daily light reaching 5, 10, 15 and 20&nbsp;m, estimated from satellite PAR and KD490 using the Morel et al. (2007) relation between KD490 and the attenuation of PAR. It is an area average, so sheltered or turbid spots will differ.</li>
-          <li><strong>Tide</strong>: times and heights of high and low water, predicted from a harmonic analysis of the last 12 months at the Gibraltar tide gauge, in local time and above mean sea level. The surge is the measured sea level minus the predicted tide: the effect of wind and air pressure. The moon phase is calculated for each day. Spring tides, with the biggest range, come a day or two after new and full moon, when the sun's and moon's pulls line up; neap tides, with the smallest range, follow the first and last quarter moons. The two-week strip shows each day's predicted range (highest high water minus lowest low water).</li>
+          <li><strong>Tide</strong>: times and heights of high and low water, predicted from a harmonic analysis of the last 12 months at the Gibraltar tide gauge, in local time and above chart datum, the level printed tide tables measure from. We work chart datum out from the gauge record itself as the lowest astronomical tide, using a separate harmonic fit for every year so the 18.6-year lunar cycle is covered; it can also be set to the published figure. The surge is the measured sea level minus the predicted tide: the effect of wind and air pressure. The moon phase is calculated for each day. Spring tides, with the biggest range, come a day or two after new and full moon, when the sun's and moon's pulls line up; neap tides, with the smallest range, follow the first and last quarter moons. The two-week strip shows each day's predicted range (highest high water minus lowest low water).</li>
           <li><strong>Forecasts</strong>: the next 5 days from the Copernicus Mediterranean forecast models (sea temperature, currents, waves) and Open-Meteo (wind). Sea surface temperature forecasts are adjusted by the average difference between the model and satellite over the last 14 days.</li>
           <li><strong>Waves</strong>: significant wave height off Europa Point, roughly the average height of the highest third of waves.</li>
           <li><strong>Wind</strong>: 10&nbsp;m wind at the airport. Easterly winds are the Levanter, westerlies the Poniente.</li>
@@ -761,6 +761,8 @@ function tideCard(cfg){
   const n = next[0];
   const surge = t.surge_last_24h;
   const surgeText = surge == null ? "" : Math.abs(surge) < 0.03 ? "Weather is barely affecting sea level." : `Weather is ${surge > 0 ? "raising" : "lowering"} sea level by about ${fmt(Math.abs(surge) * 100, 0)} cm.`;
+  const chartDatum = t.chart_datum_below_msl != null;
+  const ht = h => chartDatum ? fmt(h, 2) : signed(h, 2);       // chart datum heights are always positive
   const m = moonInfo(now);
   const nextFull = nextPhase(now, 180), nextNew = nextPhase(now, 0);
   const upcoming = nextFull < nextNew ? ["Full moon", nextFull] : ["New moon", nextNew];
@@ -785,13 +787,13 @@ function tideCard(cfg){
   return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
     <div class="label"><span>${cfg.title}</span><span class="where">${esc(cfg.where)}</span></div>
     <div class="value num">${fmtTime(n.time)}<span class="unit">next ${n.type} water</span></div>
-    <div class="rows num">${next.map(e => `<div><span>${e.type === "high" ? "High" : "Low"} · ${fmtDay(e.time)} ${fmtTime(e.time)}</span><b>${signed(e.height, 2)} m</b></div>`).join("")}</div>
+    <div class="rows num">${next.map(e => `<div><span>${e.type === "high" ? "High" : "Low"} · ${fmtDay(e.time)} ${fmtTime(e.time)}</span><b>${ht(e.height)} m</b></div>`).join("")}</div>
     <div class="moon">${moonSvg(m)}<span><b>${m.name}</b>, ${fmt(m.lit * 100, 0)}% lit · ${upcoming[0].toLowerCase()} ${fmtDay(new Date(upcoming[1]).toISOString())} ${new Date(upcoming[1]).toLocaleDateString("en-GB", {day:"numeric", month:"short", timeZone:"Europe/Gibraltar"})}</span></div>
     ${sn ? `<span class="chip ${sn.state === "Spring tides" ? "up" : sn.state === "Neap tides" ? "down" : "normal"}">${sn.state} · ${fmt(sn.todayRange, 2)} m range today</span>` : ""}
     ${strip}
     <p class="context">${surgeText} Spring tides follow new and full moons, when the sun and moon pull in line; neaps follow the quarter moons.</p>
     ${tideCurve(t)}
-    <div class="foot"><span>Heights above mean sea level</span><span>Local time</span></div>
+    <div class="foot"><span>Heights above ${chartDatum ? "chart datum" : "mean sea level"}${chartDatum && t.mean_sea_level != null ? ` (mean sea level ${fmt(t.mean_sea_level, 2)} m)` : ""}</span><span>Local time</span></div>
   </button>`;
 }
 async function lightCard(cfg){
