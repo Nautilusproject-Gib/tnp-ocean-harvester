@@ -347,8 +347,26 @@ def tide_extremes(pred: pd.Series, min_separation_hours: float = 3.0):
     return out
 
 
+def chart_datum_below_msl(fits: dict, step_minutes: int = 20) -> float | None:
+    """Depth of chart datum below mean sea level, as the lowest astronomical tide in the record.
+
+    Chart datum is the level tide tables measure from: the lowest tide expected under average weather
+    (lowest astronomical tide). Each well-covered year is predicted from its own harmonic fit, with that
+    year's mean level removed, and the lowest level reached across all those years is taken. Using every
+    year covers the 18.6-year lunar cycle, which is what makes a tide low enough to set the datum.
+    """
+    if not fits:
+        return None
+    lows = []
+    for year, f in fits.items():
+        idx = pd.date_range(f"{year}-01-01", f"{year}-12-31 23:59", freq=f"{step_minutes}min")
+        lows.append(float(predict_tide(f, idx, include_mean=False).min()))
+    return -min(lows) if lows else None
+
+
 def tide_analysis(hourly: pd.Series, now: datetime, predict_days: int = 7, fit_days: int = 365,
-                  min_year_days: int = 300, sample_offset_minutes: float = 30.0):
+                  min_year_days: int = 300, sample_offset_minutes: float = 30.0,
+                  datum: str = "chart", chart_datum_offset_m: float | None = None):
     """Yearly harmonic fits -> residual (surge) for the whole record; latest fit -> predictions.
 
     `sample_offset_minutes` moves each reading to the middle of the period it averages. The harvester
@@ -399,9 +417,16 @@ def tide_analysis(hourly: pd.Series, now: datetime, predict_days: int = 7, fit_d
     rg = residual.groupby(residual.index.normalize())
     daily_surge = rg.mean().where(rg.count() >= 20).dropna()
 
+    # Reference level for published heights: chart datum (like tide tables) or mean sea level.
+    z0 = chart_datum_offset_m if chart_datum_offset_m is not None else chart_datum_below_msl(fits)
+    if datum == "chart" and z0 is None:
+        z0 = float(-(predict_tide(latest_fit, pd.date_range(latest_fit["start"][:10], periods=366 * 72, freq="20min"),
+                                  include_mean=False)).min())
+    ref = latest_fit["mean"] - float(z0) if datum == "chart" else latest_fit["mean"]
+
     now = pd.Timestamp(now).floor("10min")
     fine = pd.date_range(now - pd.Timedelta(days=1), now + pd.Timedelta(days=predict_days), freq="10min")
-    msl = latest_fit["mean"]
+    msl = ref
     pred_fine = predict_tide(latest_fit, fine) - msl
     extremes = [(t, k, h) for t, k, h in tide_extremes(pred_fine) if t >= now - pd.Timedelta(hours=12)]
 
@@ -412,7 +437,12 @@ def tide_analysis(hourly: pd.Series, now: datetime, predict_days: int = 7, fit_d
     top = sorted(latest_fit["constituents"].items(), key=lambda kv: -kv[1]["amp"])[:8]
     payload = {
         "generated": now.strftime("%Y-%m-%dT%H:%MZ"),
-        "datum": "mean sea level over the last 12 months",
+        "datum": "chart datum" if datum == "chart" else "mean sea level over the last 12 months",
+        "datum_note": ("chart datum, the level tide tables measure from (lowest astronomical tide, "
+                       f"{_r(z0, 2)} m below mean sea level here)" if datum == "chart"
+                       else "mean sea level over the last 12 months"),
+        "chart_datum_below_msl": _r(z0, 2) if datum == "chart" else None,
+        "mean_sea_level": _r(float(z0), 2) if datum == "chart" else 0.0,   # mean sea level above the reference
         "fit": {"start": latest_fit["start"][:10], "end": latest_fit["end"][:10],
                 "constituents": [{"name": n, "amp": _r(c["amp"], 3), "phase": _r(c["phase"], 1)} for n, c in top]},
         "last_observation": last.strftime("%Y-%m-%dT%H:%MZ"),
