@@ -1,0 +1,69 @@
+# Species table for NEMO records. Edit freely: the harvester reads this file, nothing is hard-coded.
+#
+# groups:      how records are bucketed on the dashboard. Anything not listed here keeps the group
+#              NEMO itself gives the record (Dolphin, Jellyfish, Birds and so on).
+# gelatinous:  drifter      = arrives on wind and surface current (siphonophores, by-the-wind-sailors)
+#              water_column = builds in place (true jellyfish, salps, comb jellies)
+# invasive:    established  = breeding here, recorded repeatedly
+#              emerging     = recorded in more than one year, not yet clearly established
+#              watch        = recorded once or twice, or expected but not yet confirmed
+# stinging:    species that matter for swimmers, used for the beach-facing wording
+
+gelatinous:
+  drifter:
+    - Portuguese Man O' War
+    - By-the-wind-sailor
+    - Blue button
+    - Abylopsis tetragona
+    - Nemsignis banyulensis
+  water_column:
+    - Mauve stinger
+    - Rhizostoma luteum
+    - Rhizostoma pulmo
+    - Fried Egg
+    - Stinging Cauliflower
+    - Moon
+    - Compass
+    - Egg-yolk jellyfish
+    - Castostylus tagi
+    - Comb jellyfish
+    - Salpa maxima
+    - Twin-sailed salp
+    - Pyrosoma atlanticum
+
+stinging:
+  - Mauve stinger
+  - Portuguese Man O' War
+  - Stinging Cauliflower
+  - Compass
+  - Fried Egg
+
+# Status is your call, not the harvester's. A species listed here appears on the invasive watch card
+# even before it is ever recorded, so people know what to look for.
+invasive:
+  Blue crab: established           # Callinectes sapidus, recorded every year since 2021
+  Sally light-foot: emerging       # Percnon gibbesi
+  Veined rapa whelk: emerging      # Rapana venosa
+  Silver-cheeked toadfish: watch   # Lagocephalus sceleratus, toxic
+  Comb jellyfish: watch            # check whether Mnemiopsis leidyi (invasive) or native Beroe
+  Moon Crab: watch
+  Round Sardinella: watch
+  Mediterranean Parrotfish: watch  # range expanding with warming, not invasive as such
+  # Not yet recorded in NEMO, listed so a first record raises a flag:
+  Lionfish: watch
+  Devil firefish: watch
+  Atlantic blue crab: watch
+  Rugulopteryx okamurae: watch
+
+# Species that should never be published at full precision, whatever the record says.
+sensitive:
+  - Orca
+  - Sperm
+  - Fin
+  - Blue
+  - Humpback
+  - Minke
+  - Loggerhead
+  - Leatherback
+  - Green
+  - Basking

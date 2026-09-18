@@ -830,6 +830,39 @@ export:
     # chart_datum_offset_m: 0.48     # set this to the published depth of chart datum below mean sea level
                                      # if the dashboard's own estimate does not match the tide tables
 
+  # NEMO citizen science sightings. The source is a CSV in the repo for now; the API swaps in here.
+  wildlife:
+    enabled: true
+    species_file: species.yaml
+    private_dir: private            # not published to the website: the matched file and stranding candidates
+    include_notes: false            # keep written notes out of the run files: they sometimes name people,
+                                    # and files attached to a run on a public repository are public
+    source:
+      # Preferred: a private link to the export, held in the GitHub secret named here. Nothing
+      # personal is then committed to this public repository. The API key replaces this later.
+      url_env: NEMO_CSV_URL
+      csv: nemo/nemo_export.csv     # fallback: only commit an export with the User and Notes columns removed
+      time_format: "%d/%m/%Y %H:%M"
+      timezone: Europe/Gibraltar    # NEMO records local time; midnight means the time was not known
+    bbox: [-6.0, 35.6, -4.3, 36.6]  # records outside this are set aside as not local
+    recent_days: 30
+    bloom_min_records: 3            # a gelatinous "bloom" day: at least this many records
+    bloom_min_share: 0.4            # and at least this share of everything reported that day
+    conditions:                     # attached to every record; "area" means the record's own sea area
+      - {variable: sst, location: area}
+      - {variable: chl, location: area}
+      - {variable: kd490, location: area}
+      - {variable: temp_10m, location: area}
+      - {variable: salinity, location: area}
+      - {variable: nitrate, location: area}
+      - {variable: current_speed, location: area}
+      - {variable: par, location: area}
+      - {variable: wave_hs, location: europa_point}
+      - {variable: wind_speed, location: gibraltar_airport}
+      - {variable: wind_dir, location: gibraltar_airport, anomaly: false}
+      - {variable: upwelling_index, location: gibraltar_airport}
+      - {variable: dust_sfc, location: gibraltar_airport}
+
   forecast:
     bias_correct:
       sst: {from: temp_surface, days: 14}    # model surface temperature forecast, matched to satellite SST
