@@ -1,0 +1,78 @@
+name: Weekly catch-up backfill
+
+# Walks backwards through every source that still has history to fetch, for a few hours, once a week.
+# Each run resumes where the last one stopped, and goes quiet once every source says "nothing to do".
+on:
+  schedule:
+    - cron: "0 4 * * 0"        # Sunday 04:00 UTC, clear of the morning harvest
+  workflow_dispatch:
+    inputs:
+      max_minutes:
+        description: "Stop starting new chunks after this many minutes"
+        required: false
+        default: "300"
+      restore_key:
+        description: "Only for recovery: exact cache key of a database to start from (blank = newest)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tnp-harvester           # never runs alongside the daily harvest or a manual backfill
+  cancel-in-progress: false
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+  EARTHDATA_USERNAME: ${{ secrets.EARTHDATA_USERNAME }}
+  EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
+  ADS_API_KEY: ${{ secrets.ADS_API_KEY }}
+
+jobs:
+  catchup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore SQLite database
+        id: restore
+        if: env.DATABASE_URL == ''
+        uses: actions/cache/restore@v4
+        with:
+          path: data/tnp_ocean.db
+          key: ${{ github.event.inputs.restore_key || format('tnp-db-{0}', github.run_id) }}
+          restore-keys: tnp-db-
+
+      - name: Catch up on history
+        id: catchup
+        run: python harvest.py backfill --max-minutes ${{ github.event.inputs.max_minutes || '300' }}
+
+      - name: Status
+        if: always() && steps.catchup.outcome != 'skipped'
+        run: python harvest.py status
+
+      - name: Save SQLite database
+        if: always() && env.DATABASE_URL == '' && steps.catchup.outcome != 'skipped' && hashFiles('data/tnp_ocean.db') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/tnp_ocean.db
+          key: tnp-db-${{ github.run_id }}
+
+      - name: Keep a backup copy of the database (30 days)
+        if: always() && env.DATABASE_URL == '' && steps.catchup.outcome != 'skipped' && hashFiles('data/tnp_ocean.db') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnp-db-backup
+          path: data/tnp_ocean.db
+          retention-days: 30

@@ -2,7 +2,7 @@ name: Daily harvest
 
 on:
   schedule:
-    - cron: "7 3 * * *"
+    - cron: "7 3 * * *"       # 03:07 UTC (05:07 Gibraltar summer, 04:07 winter); off the hour, when GitHub is less busy
   workflow_dispatch:
     inputs:
       restore_key:
@@ -46,6 +46,7 @@ jobs:
       - name: Offline tests
         run: python -m unittest discover -s tests
 
+      # Without a DATABASE_URL secret the harvester uses SQLite, kept between runs in the Actions cache.
       - name: Restore SQLite database
         id: restore
         if: env.DATABASE_URL == ''
@@ -59,6 +60,8 @@ jobs:
         id: harvest
         run: python harvest.py update --max-minutes 240
 
+      # Everything below only runs if the database was really loaded (never after a failed test step),
+      # so a broken run can never replace the stored history with an empty database.
       - name: Export dashboard JSON
         id: export
         if: always() && steps.harvest.outcome != 'skipped'
@@ -78,6 +81,16 @@ jobs:
           name: tnp-db-backup
           path: data/tnp_ocean.db
           retention-days: 30
+
+      # TNP-only: sightings with the sea conditions attached, and stranding candidates.
+      # Downloadable from this run's page, never published to the website.
+      - name: Keep the private wildlife files (90 days)
+        if: always() && steps.export.outcome == 'success' && hashFiles('private/*') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnp-wildlife-private
+          path: private
+          retention-days: 90
 
       - name: Publish dashboard data to GitHub Pages
         id: publish
