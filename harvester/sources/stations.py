@@ -236,11 +236,12 @@ def parse_ioc_sealevel(records: list, sensors=("rad", "pr1", "prs", "flt", "enc"
     Each mean is labelled with the start of its hour, so the value labelled 08:00 covers 08:00-08:59
     and represents 08:30. The tide analysis shifts them to the middle of the hour before fitting.
     """
+    empty = pd.Series(dtype="float64", index=pd.DatetimeIndex([]))
     if not isinstance(records, list) or not records:
-        return pd.Series(dtype="float64")                  # the service answers errors with a JSON object
+        return empty                                       # the service answers errors with a JSON object
     df = pd.DataFrame(records)
     if not {"slevel", "stime"} <= set(df.columns):
-        return pd.Series(dtype="float64")
+        return empty
     if "sensor" in df.columns:
         present = list(df["sensor"].dropna().unique())
         pick = next((x for x in sensors if x in present), present[0] if present else None)
@@ -251,7 +252,7 @@ def parse_ioc_sealevel(records: list, sensors=("rad", "pr1", "prs", "flt", "enc"
     s = df.dropna(subset=["t", "v"]).drop_duplicates("t").set_index("t")["v"].sort_index()
     s = s[(s > -20) & (s < 20)]
     if s.empty:
-        return pd.Series(dtype="float64")
+        return empty
     med = s.rolling("15min", center=True, min_periods=3).median()
     s = s[(s - med).abs() <= spike_m]
     g = s.resample("1h")
@@ -285,7 +286,7 @@ class IocSeaLevel(Source):
         while cur <= end:
             stop = min(end, cur + timedelta(days=step - 1))
             sensors = tuple(self.cfg.get("sensors") or ("rad", "pr1", "prs", "flt", "enc", "bub"))
-            hourly = pd.Series(dtype="float64")
+            hourly = pd.Series(dtype="float64", index=pd.DatetimeIndex([]))
             for code in stations:
                 hourly = parse_ioc_sealevel(self._get(code, cur, stop), sensors)
                 if hourly.empty and self.cfg.get("retry_daily", True) and stop > cur:
@@ -303,6 +304,10 @@ class IocSeaLevel(Source):
                         hourly = pd.concat(parts).sort_index()
                 if not hourly.empty:
                     break
+            if hourly.empty:                               # nothing published for these days at all
+                cur = stop + timedelta(days=1)
+                _time.sleep(float(self.cfg.get("pause_seconds", 1.0)))
+                continue
             hourly = hourly[(hourly.index >= pd.Timestamp(cur)) & (hourly.index < pd.Timestamp(stop + timedelta(days=1)))]
             for t, v in hourly.items():
                 out.append(Observation(self.code, "sea_level_hourly", point, t.to_pydatetime(), float(v),
