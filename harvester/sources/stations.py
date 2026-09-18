@@ -284,11 +284,23 @@ class IocSeaLevel(Source):
         cur = start
         while cur <= end:
             stop = min(end, cur + timedelta(days=step - 1))
+            sensors = tuple(self.cfg.get("sensors") or ("rad", "pr1", "prs", "flt", "enc", "bub"))
             hourly = pd.Series(dtype="float64")
             for code in stations:
-                records = self._get(code, cur, stop)
-                hourly = parse_ioc_sealevel(records, tuple(self.cfg.get("sensors") or
-                                                            ("rad", "pr1", "prs", "flt", "enc", "bub")))
+                hourly = parse_ioc_sealevel(self._get(code, cur, stop), sensors)
+                if hourly.empty and self.cfg.get("retry_daily", True) and stop > cur:
+                    # a gauge reporting every few seconds can return too much for one request,
+                    # and the service answers with nothing at all; ask day by day instead
+                    parts = []
+                    day = cur
+                    while day <= stop:
+                        one = parse_ioc_sealevel(self._get(code, day, day), sensors)
+                        if not one.empty:
+                            parts.append(one)
+                        day += timedelta(days=1)
+                        _time.sleep(float(self.cfg.get("pause_seconds", 1.0)))
+                    if parts:
+                        hourly = pd.concat(parts).sort_index()
                 if not hourly.empty:
                     break
             hourly = hourly[(hourly.index >= pd.Timestamp(cur)) & (hourly.index < pd.Timestamp(stop + timedelta(days=1)))]
