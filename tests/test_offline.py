@@ -831,6 +831,15 @@ class WildlifeTests(unittest.TestCase):
                      cell_1km="36.1,-5.3"), cfg)}
         self.assertEqual(watch["Moon Crab"]["records"], 1)     # named without the group prefix
 
+    def test_wrong_time_format_falls_back_to_auto(self):
+        """The ISO export read with the raw export's day-first format used to lose every record."""
+        csv = ("record_id,datetime,group,species,lat,lon\n"
+               "1,2018-06-09 13:16,Dolphin,Common,36.135,-5.355\n"
+               "2,2018-06-10 09:00,Dolphin,Common,36.144,-5.358\n")
+        raw = self.wl.read_records(csv, time_format="%d/%m/%Y %H:%M")
+        self.assertEqual(len(raw), 2)
+        self.assertEqual(str(raw["local_time"].iloc[0]), "2018-06-09 13:16:00")
+
     def test_cleaning_times_flags_and_area(self):
         c = self.clean
         self.assertEqual(len(c), 7)                                  # the Spanish inland record is dropped
