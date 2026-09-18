@@ -109,6 +109,16 @@ a{color:var(--data)}
 .sn-key{display:grid;grid-template-columns:repeat(14,1fr);gap:2px;font-size:10px;color:var(--muted);text-align:center;line-height:1.2}
 .sn-note{display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 8px;font-size:11px;color:var(--muted)}
 .sn-key svg.mini{width:11px;height:11px;display:inline-block;vertical-align:-1px}
+.scale{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-top:10px}
+.scale i{display:block;width:26px;height:12px;flex:none}
+.scroll{overflow-x:auto}
+.wcal{display:grid;grid-template-columns:150px repeat(12,1fr);gap:2px;min-width:620px}
+.wcal .hd{font-size:11px;color:var(--muted);text-align:center}
+.wcal .rowlab{font-size:13px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;white-space:nowrap}
+.wcal .cell{height:24px;display:flex;align-items:center;justify-content:center;font-size:11px}
+.tag.established{color:#8E2B12;background:#FBE9E3;border-color:#EDB9A8}
+.tag.emerging{color:#8A5A12;background:var(--sand-bg);border-color:#EACB8A}
+.tag.watch{color:#4D5F66;background:#F2F5F6;border-color:#DCE4E7}
 .events-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px}
 .events-grid .panel{padding:14px 16px}
 .events-grid .big{font-size:28px;font-weight:700;color:var(--ink)}
@@ -285,6 +295,24 @@ details ul{padding-left:18px;margin:8px 0}
     </div>
   </section>
 
+  <section class="section" id="wildlife-section" aria-labelledby="wildlife-h" hidden>
+    <div class="section-head">
+      <h2 id="wildlife-h">What people are seeing</h2>
+      <p>Every sighting reported through NEMO inside the area this dashboard covers. Positions are rounded to a 1&nbsp;km square, and whales, dolphins and turtles are shown without a position at all.</p>
+    </div>
+    <div class="panel">
+      <div class="scroll"><div class="wcal" id="wcal" role="img" aria-label="Sightings by group and month"></div></div>
+      <div class="scale"><span>Fewer</span><i style="background:#EAF4F8"></i><i style="background:#BFE0EE"></i><i style="background:#76CCF9"></i><i style="background:#0074A6"></i><i style="background:#034560"></i><span>More</span><span style="margin-left:auto" id="wcal-note"></span></div>
+    </div>
+    <div class="table-wrap" style="margin-top:12px">
+      <table>
+        <caption class="note" style="caption-side:bottom;text-align:left;padding:10px 12px" id="wsight-caption"></caption>
+        <thead><tr><th scope="col">Date</th><th scope="col">Species</th><th scope="col">Group</th><th scope="col">Where</th><th scope="col">Verified</th></tr></thead>
+        <tbody id="wsight-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="section" aria-labelledby="about-h">
     <div class="section-head"><h2 id="about-h">About the data</h2></div>
     <details>
@@ -307,6 +335,14 @@ details ul{padding-left:18px;margin:8px 0}
           <li><strong>Forecasts</strong>: the next 5 days from the Copernicus Mediterranean forecast models (sea temperature, currents, waves) and Open-Meteo (wind). Sea surface temperature forecasts are adjusted by the average difference between the model and satellite over the last 14 days.</li>
           <li><strong>Waves</strong>: significant wave height off Europa Point, roughly the average height of the highest third of waves.</li>
           <li><strong>Wind</strong>: 10&nbsp;m wind at the airport. Easterly winds are the Levanter, westerlies the Poniente.</li>
+        </ul>
+        <h3 style="font-size:16px">Wildlife (NEMO)</h3>
+        <ul>
+          <li><strong>Sightings</strong>: records from NEMO, TNP's citizen science app. They show what people reported, which depends on who was out looking, so a quiet month can mean quiet seas or a quiet app. Weekends carry about three times a weekday's records.</li>
+          <li><strong>Jellyfish and gelatinous</strong>: jellyfish, salps, comb jellies and the wind-blown drifters like the Portuguese man o' war. A busy spell is flagged only when these make up most of what is reported that day, so a busy reporting day on its own does not count.</li>
+          <li><strong>Invasive watch</strong>: species on a watchlist TNP maintains, including some not yet recorded here. A species appears publicly only once a record has been verified from a photograph or video.</li>
+          <li><strong>Strandings</strong>: dead or stranded animals reported through the app. TNP keeps its own strandings log, which is the authoritative record; these public reports are a check against it.</li>
+          <li>Observer names, user accounts and written notes never leave NEMO. Positions are published rounded to a 1&nbsp;km square, and whales, dolphins, turtles and other sensitive species are published with no position at all.</li>
         </ul>
         <h3 style="font-size:16px">Chemical</h3>
         <ul>
@@ -365,6 +401,7 @@ const GROUPS = [
   ["physical", "Physical", "Temperature, light, currents, waves and weather: the physical setting that everything else responds to. More measurements are in the chart menu below."],
   ["chemical", "Chemical", "Nutrients, oxygen, the carbonate system and Saharan dust. Sea values come from the Copernicus Mediterranean biogeochemistry model, not direct measurement."],
   ["biological", "Biological", "Phytoplankton: how much there is, which groups and sizes dominate, and how fast it grows. Most values are from satellite; cards marked Model come from the Copernicus biogeochemistry model."],
+  ["wildlife", "Wildlife", "What people are seeing in the water, reported through NEMO by the public, schools and TNP teams. Counts follow reporting effort as much as the animals themselves, so compare like with like."],
 ];
 const VARS = [
   // physical
@@ -400,6 +437,11 @@ const VARS = [
   {g:"physical", v:"surge", title:"Surge (weather effect on sea level)", loc:"gibraltar_tide_gauge", where:"Gibraltar", unit:"m", dp:2, up:"Higher", down:"Lower", card:false},
   {g:"physical", v:"sea_level", title:"Sea level against the past year", loc:"gibraltar_tide_gauge", where:"Gibraltar", unit:"m", dp:2, up:"Higher", down:"Lower", card:false},
   {g:"physical", v:"precip", title:"Rain", loc:"gibraltar_airport", where:"Airport", unit:"mm", dp:1, up:"Wetter", down:"Drier", floor0:true, card:false},
+  // wildlife (NEMO sightings)
+  {g:"wildlife", v:"wsight", special:"sightings", title:"Sightings", loc:"area"},
+  {g:"wildlife", v:"wgel", special:"gelatinous", title:"Jellyfish and gelatinous", loc:"area"},
+  {g:"wildlife", v:"winv", special:"invasive", title:"Invasive watch", loc:"area"},
+  {g:"wildlife", v:"wstrand", special:"strandings", title:"Strandings reported", loc:"area"},
   // chemical
   {g:"chemical", v:"dust_sfc", title:"Saharan dust", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:0, up:"Dustier", down:"Less dust", floor0:true, threshold:50},
   {g:"chemical", v:"nitrate", title:"Nitrate", loc:"area", unit:"mmol/m³", dp:2, up:"More nitrate", down:"Less nitrate", floor0:true, model:true},
@@ -473,7 +515,7 @@ function cardFromSeries(series){
   const mean = c && c.mean[i] != null ? c.mean[i] : null, sd = c && c.sd[i] != null ? c.sd[i] : null;
   return {date:last[0], value:last[1], clim_mean:mean, clim_sd:sd, z: mean != null && sd ? (last[1]-mean)/sd : null};
 }
-let meta = null, latest = [], dust = null, mhw = null, upwelling = null, blooms = null, tides = null;
+let meta = null, latest = [], dust = null, mhw = null, upwelling = null, blooms = null, tides = null, wildlife = null;
 
 function locFor(cfg){ return cfg.loc === "area" ? state.area : cfg.loc; }
 function areaName(code, short){ const a = AREAS.find(a => a[0] === code); return a ? a[short ? 2 : 1] : code; }
@@ -554,6 +596,10 @@ async function renderCards(){
     if (cfg.special === "tide") return tideCard(cfg);
     if (cfg.special === "light") return lightCard(cfg);
     if (cfg.special === "bloom") return bloomCard(cfg);
+    if (cfg.special === "sightings") return sightingsCard(cfg);
+    if (cfg.special === "gelatinous") return gelatinousCard(cfg);
+    if (cfg.special === "invasive") return invasiveCard(cfg);
+    if (cfg.special === "strandings") return strandingsCard(cfg);
     const loc = locFor(cfg);
     let got = null;
     try { got = await getSeries(cfg, loc); } catch(e){}
@@ -840,6 +886,79 @@ function bloomCard(cfg){
     ${chip}
     <p class="context">${context}</p>
     <div class="foot"><span>${fmtDate(st.date)}</span><span>${yearN} bloom${yearN === 1 ? "" : "s"} this year</span></div>
+  </button>`;
+}
+
+const GROUP_LABELS = {"Marine Invertebrates":"Invertebrates", "Marine Phytoplankton":"Sea sparkle and plankton",
+  "Dolphin":"Dolphins", "Whales":"Whales", "Turtle":"Turtles", "Birds":"Seabirds", "Fish":"Fish",
+  "Jellyfish":"Jellyfish", "Rays":"Rays", "Sharks":"Sharks", "Nudibranchs":"Nudibranchs", "Tunicates":"Salps",
+  "Seagrass":"Seagrass", "Unrecorded":"Not recorded", "Unknown":"Unidentified"};
+const gname = g => GROUP_LABELS[g] || g;
+const topEntries = (obj, n) => Object.entries(obj || {}).sort((a,b) => b[1]-a[1]).slice(0, n);
+
+function sightingsCard(cfg){
+  const w = wildlife;
+  if (!w) return emptyCard(cfg, "All areas", "Appears once NEMO records are being harvested.");
+  const r = w.recent;
+  return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
+    <div class="label"><span>${cfg.title}</span><span class="where">All areas</span></div>
+    <div class="value num">${fmt(r.records, 0)}<span class="unit">in the last ${r.days} days</span></div>
+    <div class="rows num">${topEntries(r.by_group, 4).map(([g, n]) => `<div><span>${esc(gname(g))}</span><b>${n}</b></div>`).join("")}</div>
+    <p class="context">${fmt(w.records, 0)} records since ${w.first.slice(0,4)}, ${w.species_count} species. Reported by the public, schools and TNP.</p>
+    <div class="foot"><span>To ${fmtDate(w.last)}</span><span>NEMO</span></div>
+  </button>`;
+}
+function gelatinousCard(cfg){
+  const w = wildlife;
+  if (!w || !w.gelatinous) return emptyCard(cfg, "All areas", "Appears once NEMO records are being harvested.");
+  const g = w.gelatinous, st = g.status || {};
+  let chip;
+  if (st.state === "bloom") chip = `<span class="chip green"><span aria-hidden="true">▲</span>Bloom, day ${st.days}</span>`;
+  else if (st.state === "elevated") chip = `<span class="chip green"><span aria-hidden="true">●</span>Busier than usual</span>`;
+  else chip = `<span class="chip normal"><span aria-hidden="true">●</span>Nothing unusual reported</span>`;
+  const last = g.events.length ? g.events[g.events.length-1] : null;
+  return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
+    <div class="label"><span>${cfg.title}</span><span class="where">All areas</span></div>
+    <div class="value num">${fmt(g.water_column_recent + g.drifter_recent, 0)}<span class="unit">in the last 30 days</span></div>
+    ${chip}
+    <div class="rows num">
+      <div><span>In the water column</span><b>${g.water_column_recent}</b></div>
+      <div><span>Blown in (man o' war and kin)</span><b>${g.drifter_recent}</b></div>
+      <div><span>Stinging species</span><b>${g.stinging_recent}</b></div>
+    </div>
+    <p class="context">${last ? `Last busy spell: ${fmtShort(last.start)} ${last.start.slice(0,4)}, ${last.days} day${last.days>1?"s":""}, ${last.records} records.` : "No busy spells detected yet."} A day counts when jellyfish, salps or comb jellies make up most of what is reported.</p>
+    <div class="foot"><span>${g.events.length} spells on record</span><span>Effort-corrected</span></div>
+  </button>`;
+}
+function invasiveCard(cfg){
+  const w = wildlife;
+  if (!w || !w.invasive) return emptyCard(cfg, "All areas", "Appears once NEMO records are being harvested.");
+  const list = w.invasive.filter(i => i.records > 0);
+  const established = w.invasive.filter(i => i.status === "established" && i.records > 0).length;
+  const recent = list.filter(i => i.first_verified && (Date.now() - Date.parse(i.first_verified)) < 365*864e5);
+  return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
+    <div class="label"><span>${cfg.title}</span><span class="where">All areas</span></div>
+    <div class="value num">${list.length}<span class="unit">on the watchlist, seen here</span></div>
+    ${recent.length ? `<span class="chip up"><span aria-hidden="true">▲</span>${recent.length} first confirmed in the past year</span>`
+      : `<span class="chip normal"><span aria-hidden="true">●</span>No new arrivals confirmed this year</span>`}
+    <div class="rows num">${list.slice(0,4).map(i => `<div><span>${esc(i.species)} <span class="tag ${i.status}">${i.status}</span></span><b>${i.records}</b></div>`).join("")}</div>
+    <p class="context">${established} species ${established === 1 ? "looks" : "look"} established. A species appears publicly once a record is verified with a photograph, so the count lags the first sighting.</p>
+    <div class="foot"><span>${w.invasive.length} species watched</span><span>Photo-verified only</span></div>
+  </button>`;
+}
+function strandingsCard(cfg){
+  const w = wildlife;
+  if (!w || !w.strandings) return emptyCard(cfg, "All areas", "Appears once NEMO records are being harvested.");
+  const s = w.strandings, yr = String(new Date().getUTCFullYear());
+  const thisYear = (s.by_year || {})[yr] || 0;
+  const animals = topEntries(s.by_group, 4).filter(([g]) => g !== "Unrecorded");
+  return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
+    <div class="label"><span>${cfg.title}</span><span class="where">All areas</span></div>
+    <div class="value num">${thisYear}<span class="unit">reported this year</span></div>
+    <p class="context">Since ${Object.keys(s.by_year || {})[0] || ""}, by group:</p>
+    <div class="rows num">${animals.map(([g, n]) => `<div><span>${esc(gname(g))}</span><b>${n}</b></div>`).join("")}</div>
+    <p class="context">Dead or stranded animals reported through the app, ${fmt(s.candidates,0)} in total. TNP's own strandings log is the record of truth; these are the public reports that may or may not have reached it.</p>
+    <div class="foot"><span>${fmt(s.candidates, 0)} in total</span><span>App reports</span></div>
   </button>`;
 }
 
@@ -1289,6 +1408,33 @@ function renderEvents(){
   $("events-caption").textContent = `Latest 10 blooms for ${areaName(state.area)}. Clear-sky satellite days only; gaps of up to 3 cloudy days are bridged.`;
 }
 
+/* ---------------- wildlife ---------------- */
+function renderWildlife(){
+  const sec = $("wildlife-section");
+  if (!wildlife){ sec.hidden = true; return; }
+  sec.hidden = false;
+  const cal = wildlife.calendar, shades = ["#EAF4F8","#BFE0EE","#76CCF9","#0074A6","#034560"];
+  const groups = Object.entries(cal).map(([g, v]) => [g, v, v.reduce((a,b) => a+b, 0)])
+    .filter(x => x[2] >= 10).sort((a,b) => b[2]-a[2]);
+  const months = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+  $("wcal").innerHTML = `<div></div>` + months.map(m => `<div class="hd">${m}</div>`).join("") +
+    groups.map(([g, vals]) => {
+      const max = Math.max(...vals);
+      return `<div class="rowlab">${esc(gname(g))}</div>` + vals.map(v => {
+        const k = v === 0 ? -1 : Math.min(4, Math.floor(v / max * 4.999));
+        return `<div class="cell num" style="background:${k<0?"transparent":shades[k]};color:${k>=3?"#fff":"var(--ink)"}" title="${esc(gname(g))}, ${v} records">${v || ""}</div>`;
+      }).join("");
+    }).join("");
+  $("wcal-note").textContent = `Records per month, ${wildlife.first.slice(0,4)}–${wildlife.last.slice(0,4)}`;
+  const areaName2 = c => { const a = AREAS.find(x => x[0] === c); return a ? a[1] : (c || "Outside the mapped areas"); };
+  $("wsight-rows").innerHTML = (wildlife.recent.list || []).slice(0, 12).map(r => `<tr>
+    <td>${fmtDate(r.date)}</td><td>${esc(r.species)}</td><td>${esc(gname(r.group))}</td>
+    <td>${esc(areaName2(r.area))}</td>
+    <td>${r.verified ? "Yes" : '<span class="delta na">not yet</span>'}</td></tr>`).join("") ||
+    `<tr><td colspan="5">No sightings in the last 30 days.</td></tr>`;
+  $("wsight-caption").textContent = `The 12 most recent of ${wildlife.recent.records} sightings in the last ${wildlife.recent.days} days. Verified means TNP has checked a photograph or video.`;
+}
+
 /* ---------------- sources ---------------- */
 function renderSources(){
   const lines = [
@@ -1298,6 +1444,7 @@ function renderSources(){
     "Copernicus Atmosphere Monitoring Service (CAMS) global reanalysis (EAC4).",
     "NOAA National Centers for Environmental Information, Integrated Surface Database (Gibraltar Airport).",
     "NASA AERONET sun photometer network; we thank the principal investigators of the Málaga site.",
+    "Wildlife sightings from NEMO, The Nautilus Project's citizen science app, reported by the public, schools and TNP teams.",
     "Sea level data from the Gibraltar tide gauge, operated by the National Oceanography Centre for the Gibraltar Port Authority, via the IOC Sea Level Station Monitoring Facility.",
     "Weather forecasts from Open-Meteo.com (CC BY 4.0).",
   ];
@@ -1346,7 +1493,7 @@ async function boot(){
     [meta, latest] = await Promise.all([getJSON("meta.json"), getJSON("latest.json")]);
     try { dust = await getJSON("dust_events.json"); } catch(e){ dust = null; }
     try { mhw = await getJSON("marine_heatwaves.json"); } catch(e){ mhw = null; }
-    [upwelling, blooms, tides] = await Promise.all(["upwelling.json", "blooms.json", "tides.json"].map(f => getJSON(f).catch(() => null)));
+    [upwelling, blooms, tides, wildlife] = await Promise.all(["upwelling.json", "blooms.json", "tides.json", "wildlife.json"].map(f => getJSON(f).catch(() => null)));
   } catch(e){
     $("cards").innerHTML = `<div class="error">The data files couldn't be loaded (${esc(e.message)}). They are published after each morning's harvest; please try again later.</div>`;
     $("updated").textContent = "";
@@ -1364,6 +1511,7 @@ async function boot(){
   await Promise.all([renderCards(), renderChart()]);
   renderDust();
   renderEvents();
+  renderWildlife();
 }
 boot();
 
