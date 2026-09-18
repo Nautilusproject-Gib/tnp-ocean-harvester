@@ -38,6 +38,10 @@ env:
   EARTHDATA_USERNAME: ${{ secrets.EARTHDATA_USERNAME }}
   EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
   ADS_API_KEY: ${{ secrets.ADS_API_KEY }}
+  # Private links to the NEMO export and the TNP strandings log. Without these the wildlife
+  # section is skipped, so the run still succeeds but the dashboard has no sightings on it.
+  NEMO_CSV_URL: ${{ secrets.NEMO_CSV_URL }}
+  STRANDINGS_URL: ${{ secrets.STRANDINGS_URL }}
 
 jobs:
   backfill:
