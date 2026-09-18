@@ -8,47 +8,52 @@
 #              emerging     = recorded in more than one year, not yet clearly established
 #              watch        = recorded once or twice, or expected but not yet confirmed
 # stinging:    species that matter for swimmers, used for the beach-facing wording
+#
+# Names: NEMO names a species relative to its group, so a common dolphin is "Common" and a fin whale
+# is "Fin". Those short names collide: "Blue" is a blue whale under Whales and a blue shark under
+# Sharks. Write an entry as "Group|Species" to match only inside that group. A bare name still
+# matches any group, which is fine wherever the name is unambiguous.
 
 gelatinous:
   drifter:
-    - Portuguese Man O' War
-    - By-the-wind-sailor
-    - Blue button
+    - Jellyfish|Portuguese Man O' War
+    - Jellyfish|By-the-wind-sailor
+    - Jellyfish|Blue button
     - Abylopsis tetragona
     - Nemsignis banyulensis
   water_column:
-    - Mauve stinger
+    - Jellyfish|Mauve stinger
     - Rhizostoma luteum
     - Rhizostoma pulmo
-    - Fried Egg
-    - Stinging Cauliflower
-    - Moon
-    - Compass
-    - Egg-yolk jellyfish
+    - Jellyfish|Fried Egg
+    - Jellyfish|Stinging Cauliflower
+    - Jellyfish|Moon                 # the jellyfish, not Moon Crab
+    - Jellyfish|Compass
+    - Jellyfish|Egg-yolk jellyfish
     - Castostylus tagi
-    - Comb jellyfish
+    - Jellyfish|Comb jellyfish
     - Salpa maxima
     - Twin-sailed salp
     - Pyrosoma atlanticum
 
 stinging:
-  - Mauve stinger
-  - Portuguese Man O' War
-  - Stinging Cauliflower
-  - Compass
-  - Fried Egg
+  - Jellyfish|Mauve stinger
+  - Jellyfish|Portuguese Man O' War
+  - Jellyfish|Stinging Cauliflower
+  - Jellyfish|Compass
+  - Jellyfish|Fried Egg
 
 # Status is your call, not the harvester's. A species listed here appears on the invasive watch card
 # even before it is ever recorded, so people know what to look for.
 invasive:
-  Blue crab: established           # Callinectes sapidus, recorded every year since 2021
-  Sally light-foot: emerging       # Percnon gibbesi
-  Veined rapa whelk: emerging      # Rapana venosa
-  Silver-cheeked toadfish: watch   # Lagocephalus sceleratus, toxic
-  Comb jellyfish: watch            # check whether Mnemiopsis leidyi (invasive) or native Beroe
-  Moon Crab: watch
-  Round Sardinella: watch
-  Mediterranean Parrotfish: watch  # range expanding with warming, not invasive as such
+  Marine Invertebrates|Blue crab: established           # Callinectes sapidus, recorded every year since 2021
+  Marine Invertebrates|Sally light-foot: emerging       # Percnon gibbesi
+  Marine Invertebrates|Veined rapa whelk: emerging      # Rapana venosa
+  Fish|Silver-cheeked toadfish: watch   # Lagocephalus sceleratus, toxic
+  Jellyfish|Comb jellyfish: watch            # check whether Mnemiopsis leidyi (invasive) or native Beroe
+  Marine Invertebrates|Moon Crab: watch
+  Fish|Round Sardinella: watch
+  Fish|Mediterranean Parrotfish: watch  # range expanding with warming, not invasive as such
   # Not yet recorded in NEMO, listed so a first record raises a flag:
   Lionfish: watch
   Devil firefish: watch
@@ -57,13 +62,13 @@ invasive:
 
 # Species that should never be published at full precision, whatever the record says.
 sensitive:
-  - Orca
-  - Sperm
-  - Fin
-  - Blue
-  - Humpback
-  - Minke
-  - Loggerhead
-  - Leatherback
-  - Green
-  - Basking
+  - Dolphin|Orca
+  - Whales|Sperm
+  - Whales|Fin
+  - Whales|Blue                      # the whale; blue sharks are recorded as Sharks|Blue
+  - Whales|Humpback
+  - Whales|Minke
+  - Turtle|Loggerhead
+  - Turtle|Leatherback
+  - Turtle|Green
+  - Sharks|Basking
