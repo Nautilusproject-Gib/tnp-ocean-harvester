@@ -24,16 +24,33 @@ def _force_ipv4():
     urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
 
 
-def _login():
+def _login(attempts: int = 3, pause: float = 20.0):
+    """Sign in to Earthdata, retrying a login that fails on the network.
+
+    earthaccess gives its token request a ten second connect timeout of its own, and
+    urs.earthdata.nasa.gov is slow often enough that one timeout used to fail the whole run. A wrong
+    password is not worth retrying, so only network errors come back here.
+    """
     global _logged_in
     _force_ipv4()
+    import time
+
     import earthaccess
-    if not _logged_in:
-        auth = earthaccess.login(strategy="environment")
+    if _logged_in:
+        return earthaccess
+    last = None
+    for attempt in range(attempts):
+        try:
+            auth = earthaccess.login(strategy="environment")
+        except Exception as e:                       # requests and earthaccess raise different types
+            last = e
+            time.sleep(pause * (attempt + 1))
+            continue
         if not auth or not getattr(auth, "authenticated", True):
             raise RuntimeError("Earthdata login failed - check EARTHDATA_USERNAME / EARTHDATA_PASSWORD")
         _logged_in = True
-    return earthaccess
+        return earthaccess
+    raise RuntimeError(f"Earthdata login failed after {attempts} attempts: {last}")
 
 
 def granule_date(granule) -> date:

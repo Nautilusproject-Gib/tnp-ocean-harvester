@@ -114,13 +114,21 @@ def parse_isd_csv(text: str, source: str, location: str, start: date | None = No
 
 
 class NceiIsd(Source):
+    # NOAA publishes one file per station per year, and the current year can be missing for months.
+    # An update walks a month at a time, so without this every chunk asks for the same missing file
+    # and waits on the same 404. Remembered for this run only, so a new file is picked up tomorrow.
+    _missing_years: set = set()
+
     def fetch(self, start: date, end: date):
         out = []
         for year in range(start.year, end.year + 1):
+            if (self.code, year) in NceiIsd._missing_years:
+                continue
             url = ISD_URL.format(year=year, station=self.cfg["station_id"])
             r = self.http_get(url, timeout=300)
             if r.status_code in (403, 404):
                 print(f"[{self.code}]   no file for {year} yet ({r.status_code}) at {url}")
+                NceiIsd._missing_years.add((self.code, year))
                 continue
             out.extend(parse_isd_csv(r.text, self.code, self.cfg["point"], start, end))
         return out
