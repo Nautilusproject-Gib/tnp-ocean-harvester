@@ -11,6 +11,8 @@ Produces, under export.output_dir (default public/data):
   upwelling.json                     upwelling index events and status
   blooms.json                        chlorophyll bloom events (with possible triggers) and status
   tides.json                         tide predictions, high and low waters, recent observed vs predicted
+  wildlife.json                      NEMO sightings: counts, species calendar, gelatinous and invasive watches
+  <private_dir>/nemo_matched.csv     every sighting with the sea conditions at the time (not published)
 
 It also copies the dashboard page (the site/ folder) next to the data, so GitHub Pages
 publishes page and data together.
@@ -18,6 +20,7 @@ publishes page and data together.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -27,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 from . import derived as dv
+from . import wildlife as wl
 from .db import Database
 from .stats import circular_mean_deg
 
@@ -346,6 +350,88 @@ def _write_series(path, config, variable, location, merged, clim, rec, options=N
     path.write_text(json.dumps(payload, separators=(",", ":")))
 
 
+def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out_dir: Path, log=print):
+    """Read NEMO records, attach the conditions, and write the public summary and the private file."""
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    species_cfg = yaml.safe_load((root / wcfg.get("species_file", "species.yaml")).read_text())
+    src = wcfg.get("source", {})
+    fmt = src.get("time_format", "%d/%m/%Y %H:%M")
+    if src.get("url_env") and os.environ.get(src["url_env"]):
+        # preferred: the export lives behind a private link held in GitHub secrets, so no personal
+        # data is ever committed to this repository
+        from .sources.base import Source
+        r = Source.http_get(os.environ[src["url_env"]], timeout=120)
+        if r.status_code >= 400:
+            raise FileNotFoundError(f"NEMO export link returned {r.status_code}")
+        raw = wl.read_records(r.text, fmt)
+    elif src.get("csv") and (root / src["csv"]).exists():
+        raw = wl.read_records((root / src["csv"]).read_text(encoding="utf-8-sig"), fmt)
+    else:
+        raise FileNotFoundError(f"no NEMO export found (set {src.get('url_env', 'NEMO_CSV_URL')} "
+                                f"or add {src.get('csv')})")
+
+    records = wl.clean(raw, config, bbox=wcfg.get("bbox"))
+    records = wl.tag_species(records, species_cfg)
+    matched = wl.attach_conditions(records, merged_by_key, wcfg.get("conditions", []), tide_fit)
+
+    private = root / wcfg.get("private_dir", "private")
+    private.mkdir(parents=True, exist_ok=True)
+    # Workflow files can be downloaded by anyone on a public repository, so the written notes stay out
+    # unless they are explicitly asked for. Record ids are kept, so a note can be read back in NEMO.
+    keep_notes = bool(wcfg.get("include_notes"))
+    matched.drop(columns=[] if keep_notes else ["notes"]).to_csv(private / "nemo_matched.csv", index=False)
+    cand = wl.stranding_candidates(records)
+    cand.drop(columns=[] if keep_notes else ["notes"]).to_csv(private / "stranding_candidates.csv", index=False)
+
+    # ---- public summary: counts, calendar, watches; no names, no notes, positions on a grid ----
+    day = pd.to_datetime(records["local_date"])
+    groups = sorted(records["group"].unique())
+    calendar = {g: [int(((records["group"] == g) & (day.dt.month == m)).sum()) for m in range(1, 13)]
+                for g in groups}
+    gel = records["gelatinous"] != ""
+    gel_index = wl.daily_index(records, gel)
+    gel_events, gel_status = wl.bloom_events(gel_index, int(wcfg.get("bloom_min_records", 3)),
+                                             float(wcfg.get("bloom_min_share", 0.4)))
+    drift_index = wl.daily_index(records, records["gelatinous"] == "drifter")
+    recent_days = int(wcfg.get("recent_days", 30))
+    cutoff = day.max() - pd.Timedelta(days=recent_days)
+    recent = records[day > cutoff]
+    payload = {
+        "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
+        "records": int(len(records)),
+        "first": records["local_date"].min(), "last": records["local_date"].max(),
+        "species_count": int(records["species"].nunique()),
+        "by_group": {g: int(n) for g, n in records["group"].value_counts().items()},
+        "by_year": {str(y): int(n) for y, n in day.dt.year.value_counts().sort_index().items()},
+        "calendar": calendar,
+        "recent": {"days": recent_days, "records": int(len(recent)),
+                   "by_group": {g: int(n) for g, n in recent["group"].value_counts().items()},
+                   "list": [{"date": r.local_date, "group": r.group, "species": r.species,
+                             "area": r.area, "cell": r.cell_1km if not r.sensitive else None,
+                             "verified": bool(r.verified)}
+                            for r in recent.sort_values("utc_time", ascending=False).head(25).itertuples()]},
+        "gelatinous": {"events": gel_events, "status": gel_status,
+                       "drifter_recent": int(((records["gelatinous"] == "drifter") & (day > cutoff)).sum()),
+                       "water_column_recent": int(((records["gelatinous"] == "water_column") & (day > cutoff)).sum()),
+                       "stinging_recent": int((records["stinging"] & (day > cutoff)).sum()),
+                       "by_month": [int(((records["gelatinous"] != "") & (day.dt.month == m)).sum())
+                                    for m in range(1, 13)]},
+        "invasive": wl.invasive_watch(records, species_cfg),
+        "strandings": {"candidates": int(len(cand)),
+                       "by_group": {g: int(n) for g, n in cand["group"].value_counts().items()},
+                       "by_year": {str(y): int(n) for y, n in
+                                   pd.to_datetime(cand["local_date"]).dt.year.value_counts().sort_index().items()},
+                       "note": "from the app; the TNP strandings log is the record of truth"},
+        "effort": {"contributors_per_year": {str(y): int(v) for y, v in
+                                             records.groupby(day.dt.year)["day_contributors"].max().items()},
+                   "records_per_day_median": _r(records.groupby("local_date").size().median(), 1)},
+    }
+    (out_dir / "wildlife.json").write_text(json.dumps(payload, separators=(",", ":")))
+    return len(records)
+
+
 def export(config: dict, db: Database, log=print, today=None):
     ecfg = config.get("export", {})
     out_dir = Path(ecfg.get("output_dir", "public/data"))
@@ -376,6 +462,7 @@ def export(config: dict, db: Database, log=print, today=None):
     up_wind = up.get("wind") or {}
     tides_cfg = ecfg.get("tides") or {}
     tide_payload = None
+    tide_fit = None
 
     for source, variable, location in db.series_keys():
         if variable == "sea_level_hourly":
@@ -412,6 +499,12 @@ def export(config: dict, db: Database, log=print, today=None):
                                    max_daily_offset_m=float(tides_cfg.get("max_daily_offset_m", 0.5)))
             if res:
                 level, surge, tide_payload = res
+                # a fit of the last year, kept for placing sightings in the tidal cycle
+                shifted = hs.copy()
+                shifted.index = shifted.index + pd.Timedelta(
+                    minutes=float(tides_cfg.get("sample_offset_minutes", 30)))
+                recent = shifted[shifted.index > shifted.index.max() - pd.Timedelta(days=365)]
+                tide_fit = dv.fit_tide(recent) if len(recent) > 24 * 30 else None
                 add("sea_level", tides_cfg["location"], tides_cfg["source"], level)
                 add("surge", tides_cfg["location"], tides_cfg["source"], surge)
                 tide_payload.update(station=source_label(config, tides_cfg["source"]),
@@ -571,6 +664,14 @@ def export(config: dict, db: Database, log=print, today=None):
 
     if tide_payload:
         (out_dir / "tides.json").write_text(json.dumps(tide_payload, separators=(",", ":")))
+
+    wcfg = ecfg.get("wildlife") or {}
+    if wcfg.get("enabled"):
+        try:
+            n_w = export_wildlife(config, wcfg, merged_by_key, tide_fit, out_dir, log=log)
+            log(f"Wildlife: {n_w} sightings processed")
+        except FileNotFoundError as e:
+            log(f"Wildlife: skipped ({e})")
 
     meta = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

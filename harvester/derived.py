@@ -256,6 +256,55 @@ def attach_triggers(bloom_events: list, triggers: dict, lookback_days: int = 10,
 
 
 # ------------------------------------------------------------------------------------------------
+# Moon
+# ------------------------------------------------------------------------------------------------
+SYNODIC = 29.530588853
+
+
+def moon_elongation(when) -> float:
+    """Angle between sun and moon in degrees: 0 at new moon, 180 at full.
+
+    Low-precision ecliptic longitudes (Meeus, Astronomical Algorithms), good to a few minutes on the
+    phase times, which is far more than a sighting date needs.
+    """
+    t = pd.Timestamp(when)
+    n = (t - pd.Timestamp("2000-01-01 12:00")).total_seconds() / 86400.0
+    rad = np.pi / 180
+    g = (357.5291092 + 0.98560028 * n) * rad
+    lsun = 280.46646 + 0.98564736 * n + 1.914602 * np.sin(g) + 0.019993 * np.sin(2 * g) - 0.00569
+    mm = (134.9633964 + 13.06499295 * n) * rad
+    d = (297.8501921 + 12.19074912 * n) * rad
+    f = (93.2720950 + 13.22935024 * n) * rad
+    lmoon = (218.3164477 + 13.17639648 * n + 6.288774 * np.sin(mm) + 1.274027 * np.sin(2 * d - mm)
+             + 0.658314 * np.sin(2 * d) + 0.213618 * np.sin(2 * mm) - 0.185116 * np.sin(g)
+             - 0.114332 * np.sin(2 * f) + 0.058793 * np.sin(2 * d - 2 * mm)
+             + 0.057066 * np.sin(2 * d - g - mm) + 0.053322 * np.sin(2 * d + mm)
+             + 0.045758 * np.sin(2 * d - g) - 0.040923 * np.sin(g - mm) - 0.034720 * np.sin(d)
+             - 0.030383 * np.sin(g + mm))
+    return float((lmoon - lsun) % 360.0)
+
+
+def moon_illumination(when) -> float:
+    """Lit fraction of the moon's disc, 0 at new and 1 at full."""
+    return float((1 - np.cos(np.radians(moon_elongation(when)))) / 2)
+
+
+def moon_phase_name(when) -> str:
+    e = moon_elongation(when)
+    near = lambda x: min(abs(e - x), 360 - abs(e - x)) <= 12
+    if near(0):
+        return "New moon"
+    if near(90):
+        return "First quarter"
+    if near(180):
+        return "Full moon"
+    if near(270):
+        return "Last quarter"
+    return ("Waxing crescent" if e < 90 else "Waxing gibbous" if e < 180
+            else "Waning gibbous" if e < 270 else "Waning crescent")
+
+
+# ------------------------------------------------------------------------------------------------
 # Tides
 # ------------------------------------------------------------------------------------------------
 # Constituent speeds in degrees per hour.
