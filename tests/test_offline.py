@@ -674,6 +674,15 @@ class DerivedProductTests(unittest.TestCase):
         self.assertEqual(len(obs), 9)                                 # three hours a day, three days
         self.assertEqual(obs[0].location, "gibraltar_tide_gauge")
 
+    def test_ioc_window_with_no_data(self):
+        """Years before a gauge existed return nothing; that must not raise."""
+        from harvester.sources.stations import IocSeaLevel, parse_ioc_sealevel
+        self.assertEqual(len(parse_ioc_sealevel([])), 0)
+        self.assertEqual(len(parse_ioc_sealevel({"error": "no data"})), 0)
+        src = IocSeaLevel("ioc_gibraltar", {**CONFIG["sources"]["ioc_gibraltar"], "pause_seconds": 0}, CONFIG)
+        src._get = lambda code, cur, stop: []
+        self.assertEqual(src.fetch(date(2018, 11, 25), date(2018, 12, 5)), [])
+
     def test_ioc_parser(self):
         from harvester.sources.stations import parse_ioc_sealevel
         recs = []
