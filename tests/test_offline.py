@@ -177,6 +177,59 @@ class TestDatabaseAndExport(unittest.TestCase):
         self.assertEqual(self.db.fetch_series("sst", "bay_of_gibraltar", "s")[0][1], 16.5)
         self.assertEqual(self.db.latest_time("s"), t + timedelta(days=1))
 
+    def test_update_fetches_the_newest_window_first(self):
+        """A source that has fallen behind gets today before it gets last spring, and the gap in
+        between is still filled, forwards, on the runs after that."""
+        import harvester.runner as runner_mod
+        today = runner_mod.utc_today()
+        behind = today - timedelta(days=200)
+        cfg = {**CONFIG, "sources": {"lagger": {"type": "fake", "enabled": True,
+                                                "earliest": "2018-01-01", "chunk_days": 30,
+                                                "lookback_days": 2}},
+               "export": {"output_dir": f"{self.tmp.name}/public", "daily_priority": {}}}
+        orig = runner_mod.build_source
+        runner_mod.build_source = lambda code, config: FakeSource(code, config["sources"][code], config)
+        try:
+            # pretend an earlier run stopped 200 days ago
+            self.db.log_run("lagger", "update", datetime(2020, 1, 1), datetime(2020, 1, 1),
+                            behind - timedelta(days=30), behind, 10, "ok")
+            FakeSource.calls.clear()
+            run(cfg, self.db, only=["lagger"], mode="update", log=lambda *a: None)
+            calls = list(FakeSource.calls)
+            self.assertGreater(len(calls), 2)
+            self.assertEqual(calls[0][1], today)                 # today came first
+            self.assertLess(calls[1][0], calls[0][0])            # then back to the gap
+            self.assertEqual(calls[1][0], behind - timedelta(days=2))
+            # The frontier ignores the recent pass: it sits at the end of the forward fill, well
+            # before today, so the next run picks the remaining window up instead of skipping it.
+            frontier = self.db.update_frontier("lagger").date()
+            self.assertLess(frontier, today)
+            self.assertEqual(frontier, calls[-1][1])
+            FakeSource.calls.clear()
+            run(cfg, self.db, only=["lagger"], mode="update", log=lambda *a: None)
+            self.assertTrue(FakeSource.calls)
+            self.assertEqual(FakeSource.calls[-1][1], today)      # and it closes the gap
+        finally:
+            runner_mod.build_source = orig
+
+    def test_update_of_a_current_source_is_a_single_window(self):
+        """Nothing changes for a source that is up to date: one chunk, no recent-first shuffle."""
+        import harvester.runner as runner_mod
+        today = runner_mod.utc_today()
+        cfg = {**CONFIG, "sources": {"current": {"type": "fake", "enabled": True,
+                                                 "chunk_days": 30, "lookback_days": 3}},
+               "export": {"output_dir": f"{self.tmp.name}/public", "daily_priority": {}}}
+        orig = runner_mod.build_source
+        runner_mod.build_source = lambda code, config: FakeSource(code, config["sources"][code], config)
+        try:
+            self.db.log_run("current", "update", datetime(2020, 1, 1), datetime(2020, 1, 1),
+                            today - timedelta(days=4), today - timedelta(days=1), 5, "ok")
+            FakeSource.calls.clear()
+            run(cfg, self.db, only=["current"], mode="update", log=lambda *a: None)
+            self.assertEqual(len(FakeSource.calls), 1)
+        finally:
+            runner_mod.build_source = orig
+
     def test_run_backfill_resume_and_export(self):
         import harvester.runner as runner_mod
         cfg = {**CONFIG, "sources": {"fake_rep": {"type": "fake", "enabled": True, "earliest": "2018-01-01",
