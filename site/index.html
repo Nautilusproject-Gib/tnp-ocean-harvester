@@ -327,6 +327,25 @@ details ul{padding-left:18px;margin:8px 0}
     </div>
   </section>
 
+  <section class="section" id="strandings-section" aria-labelledby="strandings-h" hidden>
+    <div class="section-head">
+      <h2 id="strandings-h">Strandings</h2>
+      <p id="strandings-intro"></p>
+    </div>
+    <div class="panel">
+      <div class="scroll"><div class="wcal" id="scal" role="img" aria-label="Strandings by month"></div></div>
+      <div class="scale"><span>Fewer</span><i style="background:#EAF4F8"></i><i style="background:#BFE0EE"></i><i style="background:#76CCF9"></i><i style="background:#0074A6"></i><i style="background:#034560"></i><span>More</span><span style="margin-left:auto" id="scal-note"></span></div>
+    </div>
+    <div class="table-wrap" style="margin-top:12px">
+      <table>
+        <caption class="note" style="caption-side:bottom;text-align:left;padding:10px 12px" id="strand-caption"></caption>
+        <thead><tr><th scope="col">Date</th><th scope="col">Species</th><th scope="col">Kind</th>
+          <th scope="col">Where</th><th scope="col">Condition</th></tr></thead>
+        <tbody id="strand-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="section" id="watch-section" aria-labelledby="watch-h" hidden>
     <div class="section-head">
       <h2 id="watch-h">What makes a <span id="watch-name">sea sparkle</span> night?</h2>
@@ -1053,6 +1072,10 @@ function invasiveCard(cfg){
 }
 function strandingsCard(cfg){
   const w = wildlife;
+  // TNP's own log is the record of truth, so it wins whenever it is there; the app reports are a
+  // second, weaker source that only matters while the log is missing.
+  const L = w && w.strandings_log;
+  if (L && L.records) return strandingsLogCard(cfg, L);
   if (!w || !w.strandings) return emptyCard(cfg, "All areas", "Appears once NEMO records are being harvested.");
   const s = w.strandings, yr = String(new Date().getUTCFullYear());
   const thisYear = (s.by_year || {})[yr] || 0;
@@ -1066,6 +1089,31 @@ function strandingsCard(cfg){
       ? `<p class="context">Nothing to count yet. Strandings are picked out of the written description on a NEMO report, and the current export does not carry that field, so this is waiting on data rather than reporting a quiet year. TNP's own strandings log is the record of truth either way.</p>`
       : `<p class="context">Dead or stranded animals reported through the app, ${fmt(s.candidates,0)} in total. TNP's own strandings log is the record of truth; these are the public reports that may or may not have reached it.</p>`}
     <div class="foot"><span>${s.text_source === false ? "Awaiting the log" : fmt(s.candidates, 0) + " in total"}</span><span>App reports</span></div>
+  </button>`;
+}
+
+const STRAND_GROUPS = ["cetacean", "turtle", "shark or ray", "seabird", "fish", "other bird",
+                       "other mammal", "unknown"];
+const STRAND_STATE = {alive: "found alive", fresh: "fresh", moderate: "moderately decomposed",
+                      decomposed: "decomposed", dead: "dead", unknown: "not recorded"};
+
+function strandingsLogCard(cfg, L){
+  const yr = String(new Date().getUTCFullYear());
+  const thisYear = (L.by_year || {})[yr] || 0;
+  const alive = (L.by_state || {}).alive || 0;
+  const since = daysSince(L.last);
+  const marine = L.marine_records || 0;
+  const top = topEntries(L.by_group, 4);
+  return `<button type="button" class="card" data-var="${cfg.v}" data-jump="strandings-section" aria-current="false">
+    <div class="label"><span>${cfg.title}</span><span class="where">Gibraltar</span></div>
+    <div class="value num">${thisYear}<span class="unit">so far in ${yr}</span></div>
+    <span class="chip ${since <= 30 ? "" : "normal"}"><span aria-hidden="true">●</span>${
+      L.last ? `Last one ${fmtShort(L.last)}, ${since} days ago` : "No dates recorded"}</span>
+    <div class="rows num">${top.map(([g, n]) =>
+      `<div><span>${esc(g.charAt(0).toUpperCase() + g.slice(1))}</span><b>${n}</b></div>`).join("")}</div>
+    <p class="context">${fmt(L.animals,0)} animals in ${fmt(L.records,0)} records since ${
+      L.first ? L.first.slice(0,4) : ""}, ${marine} of them marine. ${alive} were found alive.</p>
+    <div class="foot"><span>TNP strandings log</span><span>Every record ↓</span></div>
   </button>`;
 }
 
@@ -1599,6 +1647,37 @@ function renderWatch(){
   $("watch-note").textContent = w.note || "";
 }
 
+function renderStrandings(){
+  const sec = $("strandings-section"), L = wildlife && wildlife.strandings_log;
+  if (!L || !L.records){ sec.hidden = true; return; }
+  sec.hidden = false;
+  const marine = L.marine_records || 0;
+  $("strandings-intro").textContent =
+    `${L.animals} animals in ${L.records} records kept by TNP since ${L.first ? L.first.slice(0,4) : ""}. `
+    + `${marine} are marine; the rest are land birds and other animals found on the shoreline, kept `
+    + `here because they were reported and recovered the same way. Counts follow what was found and `
+    + `reported, which is not the same as what came ashore.`;
+
+  const months = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+  const vals = L.by_month || [], max = Math.max(1, ...vals);
+  const shades = ["#EAF4F8","#BFE0EE","#76CCF9","#0074A6","#034560"];
+  $("scal").innerHTML = `<div></div>` + months.map(m => `<div class="hd">${m}</div>`).join("") +
+    `<div class="rowlab">All records</div>` + vals.map(v => {
+      const k = v === 0 ? -1 : Math.min(4, Math.floor(v / max * 4.999));
+      return `<div class="cell num" style="background:${k<0?"transparent":shades[k]};color:${k>=3?"#fff":"var(--ink)"}" title="${v} in this month across all years">${v || ""}</div>`;
+    }).join("");
+  $("scal-note").textContent = "Records per month, every year together";
+
+  $("strand-rows").innerHTML = (L.recent || []).map(r => `<tr>
+    <td>${fmtDate(r.date)}</td><td>${esc(r.species)}${r.count > 1 ? ` <span class="delta na">x${r.count}</span>` : ""}</td>
+    <td>${esc(r.group)}</td><td>${esc(r.location || "not recorded")}</td>
+    <td>${esc(STRAND_STATE[r.state] || r.state)}</td></tr>`).join("") ||
+    `<tr><td colspan="5">Nothing in the last ${L.recent_days} days.</td></tr>`;
+  $("strand-caption").textContent =
+    `The most recent ${(L.recent || []).length} of ${L.recent_count} in the last ${L.recent_days} days. `
+    + `From TNP's own strandings log, which is the record of truth; app reports are checked against it.`;
+}
+
 /* ---------------- sources ---------------- */
 function renderSources(){
   const lines = [
@@ -1679,6 +1758,7 @@ async function boot(){
   renderEvents();
   renderWildlife();
   renderWatch();
+  renderStrandings();
 }
 boot();
 
