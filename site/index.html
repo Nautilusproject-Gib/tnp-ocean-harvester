@@ -27,6 +27,8 @@ h1,h2,h3{font-family:Lato,"Helvetica Neue",Helvetica,Arial,sans-serif;font-weigh
 button{font:inherit;cursor:pointer}
 button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 a{color:var(--data)}
+.card[aria-disabled="true"]{cursor:default}
+.card[aria-disabled="true"]:hover{box-shadow:none;transform:none}
 .cmp{display:grid;gap:10px;padding:4px 2px}
 .cmp .row{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center}
 .cmp .lab{font-size:13px;color:var(--muted)}
@@ -242,7 +244,7 @@ details ul{padding-left:18px;margin:8px 0}
     <div class="cards" id="cards" role="tabpanel" aria-labelledby="tab-physical"><div class="loading">Loading…</div></div>
   </section>
 
-  <section class="section" aria-labelledby="chart-h">
+  <section class="section" id="chart-section" aria-labelledby="chart-h">
     <div class="section-head">
       <h2 id="chart-h">Through the year</h2>
       <p>The shaded band is the average ±1 standard deviation for each day of the year. The dashed lines are the highest and lowest values recorded for that time of year.</p>
@@ -274,7 +276,7 @@ details ul{padding-left:18px;margin:8px 0}
     </div>
   </section>
 
-  <section class="section" aria-labelledby="dust-h">
+  <section class="section" id="dust-section" aria-labelledby="dust-h">
     <div class="section-head">
       <h2 id="dust-h">Saharan dust episodes</h2>
       <p>Dust blown north from the Sahara can carry iron and other nutrients to the sea surface. For each episode we compare chlorophyll, light attenuation (KD490) and light in the week before with the week after, averaged over the 20&nbsp;km box around Gibraltar.</p>
@@ -293,7 +295,7 @@ details ul{padding-left:18px;margin:8px 0}
     <div class="actions"><span></span><button type="button" class="btn secondary" id="dust-more" hidden>Show all episodes</button></div>
   </section>
 
-  <section class="section" aria-labelledby="events-h">
+  <section class="section" id="events-section" aria-labelledby="events-h">
     <div class="section-head">
       <h2 id="events-h">Blooms and upwelling</h2>
       <p>A bloom is 3 or more days with chlorophyll in the top 10% for the time of year. We note an upwelling event, Saharan dust or a marine heatwave in the 10 days before a bloom as a possible trigger. That shows timing, not proof of cause.</p>
@@ -647,10 +649,66 @@ function renderTabs(){
     });
   });
 }
+// Which sections belong to which tab. A section listed here is only shown on its own tabs, so a
+// visitor on Chemical is not scrolling past strandings to reach the dust episodes. Sections not
+// listed (today's conditions, about the data) are always on.
+const SECTION_TABS = {
+  // The chart belongs to every tab that has daily series in it. Wildlife is the exception: its
+  // cards are counts and watches, with nothing to plot, so it is left out rather than showing an
+  // empty chart with an empty menu.
+  "chart-section": ["physical", "chemical", "biological", "traffic"],
+  "dust-section": ["chemical"],
+  "events-section": ["biological"],        // chlorophyll blooms and upwelling
+  "watch-section": ["biological"],         // what makes a sea sparkle night
+  "wildlife-section": ["wildlife"],
+  "strandings-section": ["wildlife"],
+};
+
+// A section is shown when it has something to show AND the tab it belongs to is open. Both halves
+// are decided here, in one place: two rules setting `hidden` from different directions is how a
+// section ends up appearing on the wrong tab.
+const sectionHasData = {};
+
+function setSectionData(id, hasData){
+  sectionHasData[id] = !!hasData;
+  applySectionVisibility();
+}
+
+function applySectionVisibility(){
+  for (const [id, groups] of Object.entries(SECTION_TABS)){
+    const el = $(id);
+    if (!el) continue;
+    const ready = sectionHasData[id] !== false;      // unset means "always has something"
+    el.hidden = !(ready && groups.includes(state.group));
+  }
+}
+
+function groupVars(code){ return CHART_VARS.filter(c => c.g === code); }
+
+function fillVariableMenu(){
+  // Only this tab's measurements. Mixing every group into one menu is what made it long enough to
+  // need scrolling, and it let you sit on the Chemical tab looking at a chart of salinity.
+  const vs = $("var-select"), mine = groupVars(state.group);
+  const name = (GROUPS.find(g => g[0] === state.group) || [])[1] || "";
+  vs.innerHTML = mine.length
+    ? `<optgroup label="${esc(name)}">` + mine.map(c =>
+        `<option value="${c.v}">${esc(c.title)}${c.model ? " (model)" : ""}</option>`).join("")
+      + `</optgroup>`
+    : "";
+  // Changing tab with a variable the new tab does not have would leave the menu and the chart
+  // disagreeing, so fall back to the first measurement in the group.
+  if (mine.length && !mine.some(c => c.v === state.variable)){
+    state.variable = mine[0].v;
+    store.set("variable", state.variable);
+  }
+  vs.value = state.variable;
+}
+
 function selectGroup(code){
   if (state.group === code) return;
   state.group = code; store.set("group", code);
-  renderTabs(); renderCards();
+  renderTabs(); fillVariableMenu(); renderCards(); applySectionVisibility();
+  if (groupVars(code).length) renderChart();
 }
 
 /* ---------------- area buttons ---------------- */
@@ -709,9 +767,15 @@ async function renderCards(){
     </button>`;
   }));
   box.innerHTML = html.join("");
+  // A card with no chart behind it (the Wildlife counts) is not actionable unless it jumps.
+  const chartHere = (SECTION_TABS["chart-section"] || []).includes(state.group);
+  box.querySelectorAll(".card").forEach(c => {
+    if (!chartHere && !c.dataset.jump){ c.setAttribute("aria-disabled", "true"); c.tabIndex = -1; }
+  });
   box.querySelectorAll(".card").forEach(c => c.addEventListener("click", () => {
     const cfg = VARS.find(x => x.v === c.dataset.var);
     // some cards are a way in to a section further down rather than a chart to draw
+    if (c.getAttribute("aria-disabled") === "true") return;
     const jump = c.dataset.jump && $(c.dataset.jump);
     if (jump && !jump.hidden){
       jump.scrollIntoView({behavior:"smooth", block:"start"});
@@ -1565,9 +1629,8 @@ function renderEvents(){
 
 /* ---------------- wildlife ---------------- */
 function renderWildlife(){
-  const sec = $("wildlife-section");
-  if (!wildlife){ sec.hidden = true; return; }
-  sec.hidden = false;
+  setSectionData("wildlife-section", !!wildlife);
+  if (!wildlife) return;
   const cal = wildlife.calendar, shades = ["#EAF4F8","#BFE0EE","#76CCF9","#0074A6","#034560"];
   const groups = Object.entries(cal).map(([g, v]) => [g, v, v.reduce((a,b) => a+b, 0)])
     .filter(x => x[2] >= 10).sort((a,b) => b[2]-a[2]);
@@ -1600,9 +1663,9 @@ function renderWildlife(){
 const DRIVER_STYLE = {warm_sea:"warm", heatwave:"warm", dark_moon:"dark"};
 
 function renderWatch(){
-  const sec = $("watch-section"), w = watchSpecies();
-  if (!w || !w.records){ sec.hidden = true; return; }
-  sec.hidden = false;
+  const w = watchSpecies();
+  setSectionData("watch-section", !!(w && w.records));
+  if (!w || !w.records) return;
   const names = w.driver_labels || {}, nights = new Set(w.events.map(e => e.start)).size;
   $("watch-name").textContent = w.name.toLowerCase();
   $("watch-intro").textContent =
@@ -1648,9 +1711,9 @@ function renderWatch(){
 }
 
 function renderStrandings(){
-  const sec = $("strandings-section"), L = wildlife && wildlife.strandings_log;
-  if (!L || !L.records){ sec.hidden = true; return; }
-  sec.hidden = false;
+  const L = wildlife && wildlife.strandings_log;
+  setSectionData("strandings-section", !!(L && L.records));
+  if (!L || !L.records) return;
   const marine = L.marine_records || 0;
   $("strandings-intro").textContent =
     `${L.animals} animals in ${L.records} records kept by TNP since ${L.first ? L.first.slice(0,4) : ""}. `
@@ -1716,12 +1779,10 @@ async function boot(){
   if (SAMPLE) $("sample").hidden = false;
   renderAreas();
   const vs = $("var-select");
-  vs.innerHTML = GROUPS.map(([code, name]) => `<optgroup label="${name}">` +
-    CHART_VARS.filter(c => c.g === code).map(c => `<option value="${c.v}">${esc(c.title)}${c.model ? " (model)" : ""}</option>`).join("") + `</optgroup>`).join("");
-  if (!CHART_VARS.some(c => c.v === state.variable)) state.variable = "sst";
+  // the group has to be settled before the menu is built, because the menu is the group's
   if (!GROUPS.some(g => g[0] === state.group)) state.group = "physical";
+  fillVariableMenu();
   renderTabs();
-  vs.value = state.variable;
   vs.addEventListener("change", () => { state.variable = vs.value; store.set("variable", vs.value); document.querySelectorAll(".card").forEach(x => x.setAttribute("aria-current", String(x.dataset.var === vs.value))); renderChart(); });
   $("year-select").addEventListener("change", e => { state.year = e.target.value; renderChart(); });
   $("source-select").addEventListener("change", e => {
@@ -1759,6 +1820,7 @@ async function boot(){
   renderWildlife();
   renderWatch();
   renderStrandings();
+  applySectionVisibility();
 }
 boot();
 
