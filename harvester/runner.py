@@ -97,7 +97,10 @@ def run(config: dict, db: Database, mode: str = "update", only: list[str] | None
             continue
 
         if mode == "update":
-            rng = (start, end) if (start and end) else plan_update(cfg, db.latest_time(code), today)
+            # Plan from where the forward catch-up actually reached, not from the newest row: the
+            # recent-first pass below puts rows well ahead of the filled-in part.
+            frontier = db.update_frontier(code) or db.latest_time(code)
+            rng = (start, end) if (start and end) else plan_update(cfg, frontier, today)
             reverse = False
         else:
             rng = plan_backfill(cfg, config, db.backfill_floor(code), today, start, end)
@@ -109,24 +112,36 @@ def run(config: dict, db: Database, mode: str = "update", only: list[str] | None
         chunk_days = int(cfg.get("chunk_days", 31))
         total_rows = 0
         failed = False
-        for c_start, c_end in date_chunks(rng[0], rng[1], chunk_days, reverse=reverse):
+        chunks = date_chunks(rng[0], rng[1], chunk_days, reverse=reverse)
+        # A source that has fallen behind gets today before it gets last spring. The newest chunk is
+        # fetched first and logged as "recent" so it does not move the frontier, then the gap is
+        # filled forwards from where it was, which keeps the catch-up resumable and gap-free.
+        # If the time budget runs out mid-catch-up, the dashboard is current and the hole is older
+        # history, which is the right way round.
+        modes = [mode] * len(chunks)
+        if mode == "update" and len(chunks) > 1:
+            chunks = [chunks[-1]] + chunks[:-1]
+            modes = ["recent"] + [mode] * (len(chunks) - 1)
+        for (c_start, c_end), chunk_mode in zip(chunks, modes):
             if deadline and time.monotonic() > deadline:
                 log(f"[{code}] time budget reached; will resume next run")
                 break
             t0 = datetime.now(timezone.utc)
-            log(f"[{code}] {mode} {c_start} -> {c_end}")
+            log(f"[{code}] {chunk_mode} {c_start} -> {c_end}")
             try:
                 obs = src.fetch(c_start, c_end)
                 n = db.upsert_observations(obs)
                 total_rows += n
-                db.log_run(code, mode, t0, datetime.now(timezone.utc), c_start, c_end, n, "ok")
+                db.log_run(code, chunk_mode, t0, datetime.now(timezone.utc), c_start, c_end, n, "ok")
                 log(f"[{code}]   {n} rows")
             except Exception as e:
-                db.log_run(code, mode, t0, datetime.now(timezone.utc), c_start, c_end, 0, "error",
+                db.log_run(code, chunk_mode, t0, datetime.now(timezone.utc), c_start, c_end, 0, "error",
                            f"{e}\n{traceback.format_exc()}")
                 log(f"[{code}]   ERROR {e}")
                 report.failed.append((code, f"{c_start}..{c_end}: {e}"))
                 failed = True
+                if chunk_mode == "recent":
+                    continue        # today can fail on its own; the catch-up is still worth running
                 break  # do not leave gaps; the next run retries from here
         if not failed:
             report.ok.append((code, f"{total_rows} rows ({rng[0]} .. {rng[1]})"))
