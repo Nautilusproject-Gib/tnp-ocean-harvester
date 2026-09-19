@@ -781,6 +781,72 @@ NEMO_SAMPLE = """ID,Reported,Parent,Species,User,Group,Lat,Lon,Notes,Verified
 """
 
 
+class ErddapTests(unittest.TestCase):
+    """HF radar surface currents from an ERDDAP griddap CSV."""
+
+    CSV = (
+        "time,depth,latitude,longitude,EWCT,NSCT,QCflag\n"
+        "UTC,m,degrees_north,degrees_east,m s-1,m s-1,\n"
+        "2026-09-01T00:00:00Z,0.0,36.0,-5.6,0.50,0.00,1\n"     # due east, good
+        "2026-09-01T00:00:00Z,0.0,36.0,-5.5,0.30,0.00,1\n"     # due east, good
+        "2026-09-01T01:00:00Z,0.0,36.0,-5.6,9.90,9.90,4\n"     # nonsense, flagged bad
+        "2026-09-01T02:00:00Z,0.0,36.0,-5.5,NaN,NaN,1\n"       # gap
+        "2026-09-02T00:00:00Z,0.0,36.0,-5.6,0.00,-1.00,1\n"    # due south
+    )
+
+    def test_parse_and_daily_vector_means(self):
+        from harvester.sources import erddap as er
+        rows = er.parse_griddap_csv(self.CSV)
+        self.assertEqual(len(rows), 5)
+        means = er.daily_vector_means(rows, "EWCT", "NSCT", ["QCflag"])
+        self.assertEqual(sorted(means), ["2026-09-01", "2026-09-02"])
+        first = means["2026-09-01"]
+        self.assertEqual(first["cells"], 2)                 # the bad and the empty cell are gone
+        self.assertAlmostEqual(first["u"], 0.40, places=6)
+        self.assertAlmostEqual(first["speed"], 0.40, places=6)
+        self.assertAlmostEqual(first["dir"], 90.0, places=3)      # towards the east
+        self.assertAlmostEqual(means["2026-09-02"]["dir"], 180.0, places=3)   # towards the south
+
+    def test_opposing_hours_average_to_slack_not_fast(self):
+        """A flooding hour and an ebbing hour cancel. Averaging speeds instead would report a
+        strong current on a day when the water barely went anywhere."""
+        from harvester.sources import erddap as er
+        rows = [{"time": "2026-09-03T00:00:00Z", "EWCT": 1.0, "NSCT": 0.0, "QCflag": 1},
+                {"time": "2026-09-03T01:00:00Z", "EWCT": -1.0, "NSCT": 0.0, "QCflag": 1}]
+        m = er.daily_vector_means(rows, "EWCT", "NSCT", ["QCflag"])["2026-09-03"]
+        self.assertAlmostEqual(m["speed"], 0.0, places=6)
+
+    def test_query_has_all_four_axes_in_order(self):
+        from harvester.sources import erddap as er
+        q = er.build_query("DS", ["EWCT", "NSCT"], "2026-09-01T00:00:00Z", "2026-09-01T23:59:59Z",
+                           [-5.6, 35.9, -5.2, 36.19], 0.0)
+        self.assertEqual(q.count("EWCT["), 1)
+        self.assertIn("EWCT[(2026-09-01T00:00:00Z):1:(2026-09-01T23:59:59Z)][(0.0):1:(0.0)]"
+                      "[(35.9):1:(36.19)][(-5.6):1:(-5.2)]", q)
+        self.assertIn(",NSCT[", q)
+
+
+class GfwTests(unittest.TestCase):
+    def test_daily_hours_sums_the_groups(self):
+        from harvester.sources import gfw
+        entries = [{"date": "2026-09-01", "flag": "ESP", "hours": 10.5},
+                   {"date": "2026-09-01", "flag": "MAR", "hours": 4.5},
+                   {"date": "2026-09-02", "flag": "ESP", "hours": 2.0},
+                   {"date": "2026-09-02", "flag": None, "hours": None}]     # ignored
+        out = gfw.daily_hours(entries)
+        self.assertAlmostEqual(out["2026-09-01"]["hours"], 15.0)
+        self.assertEqual(sorted(out["2026-09-01"]["by_flag"]), ["ESP", "MAR"])
+        self.assertAlmostEqual(out["2026-09-02"]["hours"], 2.0)
+
+    def test_geojson_ring_closes(self):
+        from harvester.sources import gfw
+        import json as _json
+        g = _json.loads(gfw.bbox_geojson([-5.75, 35.85, -5.40, 36.05]))
+        ring = g["features"][0]["geometry"]["coordinates"][0]
+        self.assertEqual(ring[0], ring[-1])       # a polygon that does not close is rejected
+        self.assertEqual(len(ring), 5)
+
+
 class WildlifeTests(unittest.TestCase):
     def setUp(self):
         import yaml
