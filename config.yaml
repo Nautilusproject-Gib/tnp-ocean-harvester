@@ -849,7 +849,31 @@ export:
     recent_days: 30
     bloom_min_records: 3            # a gelatinous "bloom" day: at least this many records
     bloom_min_share: 0.4            # and at least this share of everything reported that day
-    conditions:                     # attached to every record; "area" means the record's own sea area
+
+    # Species followed closely, with the sea conditions behind every appearance. Thresholds are here
+    # rather than in the code so they can be argued with: each one decides whether a driver is named
+    # on the card, and none of them changes the underlying numbers.
+    watch_species:
+      - species: "Marine Phytoplankton|Sea sparkle"
+        name: Sea sparkle
+        scientific: Noctiluca scintillans
+        area: bay_of_gibraltar     # blank = wherever it is most often reported
+        max_gap_days: 3            # reports this close together are one appearance
+        lead_days: 3               # wind is read over the days before, not the night itself
+        upwelling_lead_days: 5
+        warm_sea_c: 1.0            # sea this far above the usual for the date counts as warm
+        upwelling_threshold: 500   # m3/s per km, same threshold as the upwelling events card
+        calm_ratio: 0.8            # wind below this share of the usual counts as calm
+        rich_water_ratio: 1.25     # chlorophyll needs this much above the usual to count
+        dark_moon_pct: 35          # below this the moon is down enough to see bioluminescence easily
+        trigger_lookback_days: 10
+        note: >-
+          Noctiluca is not a true alga and does not bloom on nutrients alone: it grazes on other
+          plankton, so it tends to follow a diatom bloom rather than start one. Warm, calm, stratified
+          water lets it gather at the surface, which is when people see it. Records are night-time
+          sightings of bioluminescence, so a dark moon makes a bloom easier to notice as well as to
+          report.
+    conditions:                   # attached to every record; "area" means the record's own sea area
       - {variable: sst, location: area}
       - {variable: chl, location: area}
       - {variable: kd490, location: area}
