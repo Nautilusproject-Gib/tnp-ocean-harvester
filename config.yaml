@@ -652,6 +652,7 @@ sources:
     label: Global Fishing Watch
     enabled: true
     type: gfw_fishing_effort
+    optional: true                   # a fishing token problem must not fail the whole harvest
     description: Apparent fishing hours from AIS, aggregated over the Strait of Gibraltar
     area: strait_of_gibraltar
     group_by: FLAG
