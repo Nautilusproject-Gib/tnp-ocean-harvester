@@ -495,6 +495,7 @@ const VARS = [
   // biological
   {g:"biological", v:"chl", title:"Chlorophyll", loc:"area", unit:"mg/m³", dp:2, up:"More plankton", down:"Less plankton", floor0:true, sat:true},
   {g:"biological", v:"bloom", special:"bloom", title:"Bloom watch", loc:"area", chartVar:"chl"},
+  {g:"biological", v:"bwatch", special:"watch", title:"Sea sparkle", loc:"area", card:true},
   {g:"biological", v:"sizes", special:"sizes", title:"Plankton size mix", loc:"area", chartVar:"pico_phyto"},
   {g:"biological", v:"pp_sat", title:"Primary production", loc:"area", unit:"g C/m²/day", dp:2, up:"More growth", down:"Less growth", floor0:true, sat:true},
   {g:"biological", v:"diatoms", title:"Diatoms", loc:"area", unit:"mg/m³", dp:3, up:"More diatoms", down:"Fewer diatoms", floor0:true, sat:true},
@@ -667,6 +668,13 @@ async function renderCards(){
   box.innerHTML = html.join("");
   box.querySelectorAll(".card").forEach(c => c.addEventListener("click", () => {
     const cfg = VARS.find(x => x.v === c.dataset.var);
+    // some cards are a way in to a section further down rather than a chart to draw
+    const jump = c.dataset.jump && $(c.dataset.jump);
+    if (jump && !jump.hidden){
+      jump.scrollIntoView({behavior:"smooth", block:"start"});
+      jump.querySelector("h2, h3")?.focus?.();
+      return;
+    }
     state.variable = (cfg && cfg.chartVar) || c.dataset.var; store.set("variable", state.variable);
     box.querySelectorAll(".card").forEach(x => x.setAttribute("aria-current", String(x === c)));
     $("var-select").value = state.variable;
@@ -961,7 +969,7 @@ function watchCard(cfg){
     ? `<span class="chip green"><span aria-hidden="true">▲</span>Seen in the last month</span>`
     : `<span class="chip normal"><span aria-hidden="true">●</span>${days} days since the last one</span>`;
   const names = (w.driver_labels || {});
-  return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
+  return `<button type="button" class="card" data-var="${cfg.v}" data-jump="watch-section" aria-current="false">
     <div class="label"><span>${esc(w.name)}</span><span class="where">${esc(areaLabel(w.area))}</span></div>
     <div class="value num">${fmtShort(w.last)}<span class="unit">last reported</span></div>
     ${chip}
@@ -971,7 +979,7 @@ function watchCard(cfg){
         ev.sst_vs_usual != null ? ` (${ev.sst_vs_usual >= 0 ? "+" : ""}${fmt(ev.sst_vs_usual,1)} on the usual)` : ""},
       moon <span class="ex">${ev.moon_pct}% lit</span>${
         ev.drivers.length ? `, ${ev.drivers.map(d => (names[d] || d).toLowerCase()).join(", ")}` : ""}.</p>` : ""}
-    <div class="foot"><span>${esc(w.scientific)}</span><span>Night-time records</span></div>
+    <div class="foot"><span>${esc(w.scientific)}</span><span>What drives a bloom ↓</span></div>
   </button>`;
 }
 
