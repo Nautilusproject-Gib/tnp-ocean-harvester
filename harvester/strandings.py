@@ -49,6 +49,10 @@ GROUP_RULES = (
 MARINE_GROUPS = ("cetacean", "turtle", "shark or ray", "seabird", "fish")
 
 
+class StrandingsError(RuntimeError):
+    """The log could not be read. Never fatal: the rest of the dashboard does not depend on it."""
+
+
 def _key(name) -> str:
     return re.sub(r"[^a-z]", "", str(name).lower())
 
@@ -69,14 +73,19 @@ def find_header(rows: list) -> int | None:
 def read_log(data, sheet: str | None = None) -> pd.DataFrame:
     """A strandings log (.xlsx bytes, or CSV text) as a frame with our column names."""
     if isinstance(data, (bytes, bytearray)) and data[:2] == b"PK":      # xlsx is a zip
-        import openpyxl
+        try:
+            import openpyxl
+        except ImportError as e:      # pragma: no cover - depends on the install
+            raise StrandingsError("reading the log needs openpyxl (add it to requirements.txt)") from e
         wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
         ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb[wb.sheetnames[0]]
         rows = [list(r) for r in ws.iter_rows(values_only=True)]
     else:
+        # csv, not pandas: a spreadsheet saved as CSV has ragged rows, and read_csv treats the
+        # first long line as an error rather than as a row with an extra cell.
+        import csv as _csv
         text = data.decode("utf-8-sig") if isinstance(data, (bytes, bytearray)) else data
-        rows = [list(r) for r in pd.read_csv(io.StringIO(text), header=None,
-                                             dtype=object).itertuples(index=False)]
+        rows = [list(r) for r in _csv.reader(io.StringIO(text))]
     head = find_header(rows)
     if head is None:
         return pd.DataFrame(columns=["date", "species"])

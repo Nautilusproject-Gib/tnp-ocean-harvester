@@ -368,7 +368,13 @@ def load_strandings(cfg: dict, root: Path, log=print):
     if data is None:
         log(f"Strandings: no log found (set {cfg.get('url_env')} or add {cfg.get('file')})")
         return None
-    records = sl.clean(sl.read_log(data, cfg.get("sheet")), cfg)
+    # A hand-kept spreadsheet can arrive in any state, and a library can be missing from an
+    # install. Neither is a reason to lose the sea data, so nothing here is allowed to be fatal.
+    try:
+        records = sl.clean(sl.read_log(data, cfg.get("sheet")), cfg)
+    except Exception as e:
+        log(f"Strandings: could not read the log ({e})")
+        return None
     log(f"Strandings: {len(records)} records from the log")
     return records
 
