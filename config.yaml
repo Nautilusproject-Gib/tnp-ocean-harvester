@@ -548,6 +548,8 @@ sources:
     label: NASA SeaWiFS
     enabled: true
     type: nasa_l3m
+    optional: true               # urs.earthdata.nasa.gov times out often enough
+                                 # that PAR must not be able to fail the harvest
     description: SeaWiFS L3 mapped daily PAR 9 km
     short_name: SEASTAR_SEAWIFS_GAC_L3m_PAR
     granule_pattern: "*.L3m.DAY.PAR.par.9km*"
@@ -561,6 +563,8 @@ sources:
     label: NASA MODIS-Aqua
     enabled: true
     type: nasa_l3m
+    optional: true               # urs.earthdata.nasa.gov times out often enough
+                                 # that PAR must not be able to fail the harvest
     description: MODIS-Aqua L3 mapped daily PAR 4 km
     short_name: MODISA_L3m_PAR
     granule_pattern: "*.L3m.DAY.PAR.par.4km*"
@@ -574,6 +578,8 @@ sources:
     label: NASA PACE
     enabled: true
     type: nasa_l3m
+    optional: true               # urs.earthdata.nasa.gov times out often enough
+                                 # that PAR must not be able to fail the harvest
     description: PACE OCI L3 mapped daily PAR 4 km, near real time
     short_name: PACE_OCI_L3M_PAR_NRT
     granule_pattern: "*.L3m.DAY.PAR*.4km*"
