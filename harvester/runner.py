@@ -138,7 +138,13 @@ def run(config: dict, db: Database, mode: str = "update", only: list[str] | None
                 db.log_run(code, chunk_mode, t0, datetime.now(timezone.utc), c_start, c_end, 0, "error",
                            f"{e}\n{traceback.format_exc()}")
                 log(f"[{code}]   ERROR {e}")
-                report.failed.append((code, f"{c_start}..{c_end}: {e}"))
+                # An optional source is one the dashboard can do without: a bad credential or a
+                # dead endpoint there should not turn the whole harvest red and hide a real problem
+                # somewhere that matters. It is still reported, just as skipped rather than failed.
+                if cfg.get("optional"):
+                    report.skipped.append((code, f"{c_start}..{c_end}: {e}"))
+                else:
+                    report.failed.append((code, f"{c_start}..{c_end}: {e}"))
                 failed = True
                 if chunk_mode == "recent":
                     continue        # today can fail on its own; the catch-up is still worth running
