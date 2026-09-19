@@ -291,7 +291,17 @@ class Database:
                               self._t(range_end), n_rows, status, (message or "")[:4000]))
 
     def backfill_floor(self, source: str) -> datetime | None:
-        """Earliest date already covered by a successful backfill chunk."""
+        """Earliest date already covered by a successful backfill chunk.
+
+        A backfill that fetched nothing still finishes "ok", so a source that was quietly failing
+        to read its own responses ends up claiming it has covered everything back to the start and
+        will never look again. If a source holds no observations at all, its backfill history is
+        treated as worthless and the range is offered again.
+        """
+        with self.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) FROM observations WHERE source={self.ph}", (source,))
+            if cur.fetchone()[0] == 0:
+                return None
         with self.cursor() as cur:
             cur.execute(f"SELECT MIN(range_start) FROM harvest_runs WHERE source={self.ph} "
                         f"AND mode='backfill' AND status='ok'", (source,))
