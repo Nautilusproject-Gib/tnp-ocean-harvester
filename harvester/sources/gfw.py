@@ -45,14 +45,38 @@ def token_shape(token: str, raw: str) -> str:
     return "; ".join(bits)
 
 
-def bbox_geojson(bbox) -> str:
-    """A bbox as the escaped GeoJSON string the report endpoint expects."""
+def bbox_ring(bbox) -> list:
+    """A bbox as a closed polygon ring, anticlockwise from the south-west corner."""
     lon_min, lat_min, lon_max, lat_max = bbox
-    ring = [[lon_min, lat_min], [lon_max, lat_min], [lon_max, lat_max],
+    return [[lon_min, lat_min], [lon_max, lat_min], [lon_max, lat_max],
             [lon_min, lat_max], [lon_min, lat_min]]
-    return json.dumps({"type": "FeatureCollection", "features": [
+
+
+def bbox_geojson(bbox) -> str:
+    """A bbox as the GeoJSON string form of the request body."""
+    return json.dumps(feature_collection(bbox))
+
+
+def feature_collection(bbox) -> dict:
+    return {"type": "FeatureCollection", "features": [
         {"type": "Feature", "properties": {},
-         "geometry": {"type": "Polygon", "coordinates": [ring]}}]})
+         "geometry": {"type": "Polygon", "coordinates": [bbox_ring(bbox)]}}]}
+
+
+def body_shapes(bbox) -> list:
+    """The ways this endpoint has been documented to take a custom area, best guess first.
+
+    The published example stringifies the GeoJSON, but the server answers "body malformed" to it,
+    and their own clients send an object. Rather than spend a run per guess, the first request
+    tries each shape until one is accepted, then remembers which for the rest of the harvest.
+    """
+    fc = feature_collection(bbox)
+    return [
+        ("object", {"geojson": fc}),
+        ("string", {"geojson": json.dumps(fc)}),
+        ("geometry", {"geojson": fc["features"][0]["geometry"]}),
+        ("region", {"region": {"geojson": fc}}),
+    ]
 
 
 def daily_hours(entries, flag_key="flag") -> dict:
@@ -82,6 +106,9 @@ class GfwFishingEffort(Source):
 
     required_env = ("GFW_API_TOKEN",)
 
+    #: which body shape this API accepted, remembered after the first successful request
+    _body_shape: str | None = None
+
     def fetch(self, start: date, end: date):
         raw = os.environ.get("GFW_API_TOKEN") or ""
         token = clean_token(raw)
@@ -107,13 +134,21 @@ class GfwFishingEffort(Source):
                 "datasets[0]": self.cfg.get("dataset", DATASET),
                 "date-range": f"{day.isoformat()},{last.isoformat()}",
             }
-            body = {"geojson": bbox_geojson(bbox)}
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            shapes = body_shapes(bbox)
+            if GfwFishingEffort._body_shape:
+                shapes = [s for s in shapes if s[0] == GfwFishingEffort._body_shape] or shapes
             # The endpoint runs one report per user at a time and answers 429 otherwise, so these
             # go one after another, never in parallel, and a 429 is worth waiting out rather than
             # failing the whole harvest.
-            r = self.http_post(ENDPOINT, params=params, json=body, timeout=300,
-                               headers={"Authorization": f"Bearer {token}",
-                                        "Content-Type": "application/json"})
+            r = None
+            for name, body in shapes:
+                r = self.http_post(ENDPOINT, params=params, json=body, timeout=300, headers=headers)
+                if r.status_code != 422:
+                    if GfwFishingEffort._body_shape != name:
+                        print(f"[{self.code}]   request body accepted as '{name}'")
+                        GfwFishingEffort._body_shape = name
+                    break
             if r.status_code in (401, 403):
                 raise SourceError(
                     f"GFW rejected the token ({r.status_code}). The token in GFW_API_TOKEN is "
