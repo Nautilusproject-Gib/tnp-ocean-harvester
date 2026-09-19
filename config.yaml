@@ -131,7 +131,7 @@ sources:
     product: MEDSEA_MULTIYEAR_WAV_006_012
     variables: {VHM0: wave_hs, VMDR: wave_dir, VTPK: wave_tp}   # Tm-10 dropped: peak period covers it
     points: [europa_point, bay_centre]
-    earliest: "1985-01-01"
+    earliest: "1991-01-01"   # matches the 1991-2020 heatwave baseline; hourly, so depth is costly
     chunk_days: 365
     lookback_days: 10
 
@@ -596,7 +596,8 @@ sources:
     description: NOAA NCEI Integrated Surface Database, Gibraltar (LXGB) hourly reports
     station_id: "08495099999"
     point: gibraltar_airport
-    earliest: "1973-01-01"
+    earliest: "1991-01-01"   # matches the 1991-2020 heatwave baseline; hourly, so depth is costly
+    chunk_days: 365              # one file per station per year: ask once per year, not once per month
     lookback_days: 5
 
   # ---- Copernicus Marine: satellite altimetry, for sea level rise ----
@@ -684,7 +685,7 @@ sources:
       precipitation: precip
       temperature_2m: air_temp
       shortwave_radiation: sw_rad      # used for the ERA5 PAR estimate
-    earliest: "1940-01-01"
+    earliest: "1991-01-01"   # matches the 1991-2020 heatwave baseline; hourly, so depth is costly
     chunk_days: 365
     lookback_days: 10
 
