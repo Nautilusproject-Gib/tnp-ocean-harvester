@@ -913,6 +913,19 @@ class GfwTests(unittest.TestCase):
         self.assertIn("looks like a JWT", msg)
         self.assertIn("does NOT look like a JWT", token_shape("abc123", "abc123"))
 
+    def test_body_shapes_are_all_valid_and_distinct(self):
+        """Each candidate body is well-formed JSON and carries the same polygon."""
+        from harvester.sources.gfw import body_shapes
+        import json as _json
+        bbox = [-5.75, 35.85, -5.40, 36.05]
+        seen = []
+        for name, body in body_shapes(bbox):
+            blob = _json.dumps(body)                       # must be serialisable as-is
+            self.assertIn("35.85", blob)
+            self.assertIn("-5.75", blob)
+            seen.append(name)
+        self.assertEqual(seen, ["object", "string", "geometry", "region"])
+
     def test_geojson_ring_closes(self):
         from harvester.sources import gfw
         import json as _json
