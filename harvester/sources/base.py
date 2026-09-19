@@ -68,6 +68,32 @@ class Source:
                 time.sleep(30 * (attempt + 1))  # rides out brief 502s from busy APIs
         raise SourceError(f"GET {url} failed after {retries} attempts: {last}")
 
+    @staticmethod
+    def http_post(url, params=None, json=None, timeout=120, retries=4, **kw):
+        """POST with the same patience as http_get, plus a longer wait on 429.
+
+        Some APIs (Global Fishing Watch) allow one report per user at a time and answer 429 while
+        an earlier one is still running, so backing off is the correct response, not an error.
+        """
+        import time
+        last = None
+        for attempt in range(retries):
+            try:
+                r = requests.post(url, params=params, json=json, timeout=timeout,
+                                  headers={"User-Agent": USER_AGENT, **kw.pop("headers", {})}, **kw)
+                if r.status_code == 429:
+                    last = SourceError(f"POST {url} rate limited (429)")
+                    time.sleep(60 * (attempt + 1))
+                    continue
+                if r.status_code in (401, 403, 404) or r.status_code < 400:
+                    return r
+                r.raise_for_status()
+                return r
+            except requests.RequestException as e:  # pragma: no cover - network
+                last = e
+                time.sleep(30 * (attempt + 1))
+        raise SourceError(f"POST {url} failed after {retries} attempts: {last}")
+
     def fetch(self, start: date, end: date):  # pragma: no cover - abstract
         raise NotImplementedError
 
