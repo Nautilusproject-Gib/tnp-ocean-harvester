@@ -656,7 +656,6 @@ sources:
     description: Apparent fishing hours from AIS, aggregated over the Strait of Gibraltar
     area: strait_of_gibraltar
     group_by: FLAG
-    spatial_resolution: HIGH
     codes:
       hours: fishing_hours
       flags: fishing_flags
