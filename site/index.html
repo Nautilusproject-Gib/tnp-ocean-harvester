@@ -381,6 +381,11 @@ details ul{padding-left:18px;margin:8px 0}
           <li><strong>Strandings</strong>: dead or stranded animals reported through the app. TNP keeps its own strandings log, which is the authoritative record; these public reports are a check against it.</li>
           <li>Observer names, user accounts and written notes never leave NEMO. Positions are published rounded to a 1&nbsp;km square, and whales, dolphins, turtles and other sensitive species are published with no position at all.</li>
         </ul>
+        <ul>
+          <li><strong>Sea level</strong>: how high the sea stands against its 1993 to 2012 average, measured by satellite altimeters. This is the slow number underneath the tide. The tide card tells you when to walk to Sandy Bay; this one tells you what the sea is doing over decades.</li>
+          <li><strong>Surface current (measured)</strong>: hourly surface currents across the Strait from a shore-based radar network, averaged as vectors over the day. Everything else we show for currents is a model, so this is the one that can disagree with it. A day where the two part company is interesting rather than wrong.</li>
+          <li><strong>UV index</strong>: strength of burning ultraviolet at the surface. 8 and above is where shade in the middle of the day stops being optional.</li>
+        </ul>
         <h3 style="font-size:16px">Chemical</h3>
         <ul>
           <li><strong>Saharan dust</strong>: modelled dust concentration near the ground. We flag a dust day above 50&nbsp;µg&nbsp;m⁻³.</li>
@@ -389,6 +394,10 @@ details ul{padding-left:18px;margin:8px 0}
           <li><strong>pH, pCO₂, dissolved inorganic carbon and alkalinity</strong>: the seawater carbonate system. Falling pH and rising pCO₂ over the years are signs of ocean acidification.</li>
           <li><strong>Dissolved organic matter (CDOM)</strong>: light absorbed at 443&nbsp;nm by coloured dissolved material and detritus, often from rivers, runoff and plankton breakdown. From satellite.</li>
         </ul>
+        <ul>
+          <li><strong>PM10 and PM2.5</strong>: particles small enough to breathe in, in micrograms per cubic metre. In Gibraltar these rise with Saharan dust, with shipping and with still weather that lets everything sit in the bay. PM2.5 is the finer fraction that reaches deepest into the lungs.</li>
+          <li><strong>Nitrogen dioxide and ozone</strong>: NO₂ comes mostly from engines, so it tracks traffic and shipping. Ozone forms in sunlight from other pollutants, so it peaks on hot bright afternoons rather than in rush hour.</li>
+        </ul>
         <h3 style="font-size:16px">Biological</h3>
         <ul>
           <li><strong>Chlorophyll-a</strong>: the green pigment in phytoplankton, the microscopic plants at the base of the marine food web. Higher values mean more plankton.</li>
@@ -396,6 +405,11 @@ details ul{padding-left:18px;margin:8px 0}
           <li><strong>Primary production</strong>: how much carbon phytoplankton fix through the whole water column each day, estimated from satellite chlorophyll, light and temperature.</li>
           <li><strong>Phytoplankton and zooplankton carbon</strong>: plankton biomass as carbon, from the biogeochemistry model.</li>
           <li><strong>Bloom watch</strong>: whether chlorophyll is in the top 10% for the time of year, how many times the normal level it is, and what happened in the days before each bloom.</li>
+        </ul>
+        <h3 style="font-size:16px">Marine traffic</h3>
+        <ul>
+          <li><strong>Fishing activity</strong>: apparent fishing hours in the Strait, worked out by Global Fishing Watch from the AIS signals vessels broadcast. "Apparent" matters: fishing is inferred from how a boat moves, not from a logbook, and a vessel with AIS switched off or too small to carry it is invisible here. Read it as industrial activity visible from space, not as a catch record.</li>
+          <li><strong>Countries fishing</strong>: how many different flag states were fishing here that day. A rise can mean more boats or simply a wider mix of fleets.</li>
         </ul>
         <p>Cards marked <strong>Model</strong> come from the Copernicus Mediterranean physics and biogeochemistry models for the top metre of water (4.2&nbsp;km grid). Models are a best estimate that combines physics, biology and observations; they are not direct measurements, and in small areas such as the Bay they rest on only a few grid cells.</p>
       </div>
@@ -439,6 +453,7 @@ const GROUPS = [
   ["chemical", "Chemical", "Nutrients, oxygen, the carbonate system and Saharan dust. Sea values come from the Copernicus Mediterranean biogeochemistry model, not direct measurement."],
   ["biological", "Biological", "Phytoplankton: how much there is, which groups and sizes dominate, and how fast it grows. Most values are from satellite; cards marked Model come from the Copernicus biogeochemistry model."],
   ["wildlife", "Wildlife", "What people are seeing in the water, reported through NEMO by the public, schools and TNP teams. Counts follow reporting effort as much as the animals themselves, so compare like with like."],
+  ["traffic", "Marine traffic", "Human activity at sea, inferred from the AIS signals ships broadcast. A vessel with AIS switched off, or too small to carry it, does not appear here at all."],
 ];
 const VARS = [
   // physical
@@ -453,6 +468,9 @@ const VARS = [
   {g:"physical", v:"current_speed", title:"Surface current", loc:"area", unit:"m/s", dp:2, up:"Faster", down:"Slower", floor0:true, model:true},
   {g:"physical", v:"salinity", title:"Salinity", loc:"area", unit:"PSU", dp:2, up:"Saltier", down:"Fresher", model:true},
   {g:"physical", v:"mld", title:"Mixed layer depth", loc:"area", unit:"m", dp:0, up:"Deeper mixing", down:"Shallower mixing", floor0:true, model:true},
+  {g:"physical", v:"hf_current_speed", title:"Surface current (measured)", loc:"strait_of_gibraltar", where:"Strait", unit:"m/s", dp:2, up:"Faster", down:"Slower", floor0:true},
+  {g:"physical", v:"sea_level_anomaly", title:"Sea level", loc:"gibraltar_20km", unit:"m", dp:3, up:"Higher", down:"Lower"},
+  {g:"physical", v:"uv_index", title:"UV index", loc:"gibraltar_airport", where:"Gibraltar", unit:"", dp:1, up:"Stronger", down:"Weaker", floor0:true, threshold:8},
   {g:"physical", v:"wave_hs", title:"Waves", loc:"europa_point", where:"Europa Point", unit:"m", dp:1, up:"Rougher", down:"Calmer", floor0:true},
   {g:"physical", v:"wind_speed", title:"Wind", loc:"gibraltar_airport", where:"Airport", unit:"m/s", dp:1, up:"Windier", down:"Calmer", floor0:true},
   {g:"physical", v:"bbp443", title:"Particle backscatter (443 nm)", loc:"area", unit:"m⁻¹", dp:4, up:"More particles", down:"Fewer particles", floor0:true, sat:true, card:false},
@@ -475,6 +493,8 @@ const VARS = [
   {g:"physical", v:"sea_level", title:"Sea level against the past year", loc:"gibraltar_tide_gauge", where:"Gibraltar", unit:"m", dp:2, up:"Higher", down:"Lower", card:false},
   {g:"physical", v:"precip", title:"Rain", loc:"gibraltar_airport", where:"Airport", unit:"mm", dp:1, up:"Wetter", down:"Drier", floor0:true, card:false},
   // wildlife (NEMO sightings)
+  {g:"traffic", v:"fishing_hours", title:"Fishing activity", loc:"strait_of_gibraltar", where:"Strait", unit:"hours/day", dp:1, up:"More fishing", down:"Less fishing", floor0:true},
+  {g:"traffic", v:"fishing_flags", title:"Countries fishing", loc:"strait_of_gibraltar", where:"Strait", unit:"", dp:0, up:"More fleets", down:"Fewer fleets", floor0:true},
   {g:"wildlife", v:"wsight", special:"sightings", title:"Sightings", loc:"area"},
   {g:"wildlife", v:"wwatch", special:"watch", title:"Sea sparkle watch", loc:"area"},
   {g:"wildlife", v:"wgel", special:"gelatinous", title:"Jellyfish and gelatinous", loc:"area"},
@@ -482,6 +502,10 @@ const VARS = [
   {g:"wildlife", v:"wstrand", special:"strandings", title:"Strandings reported", loc:"area"},
   // chemical
   {g:"chemical", v:"dust_sfc", title:"Saharan dust", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:0, up:"Dustier", down:"Less dust", floor0:true, threshold:50},
+  {g:"chemical", v:"pm10", title:"PM10 in the air", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:0, up:"More particles", down:"Cleaner", floor0:true, threshold:45},
+  {g:"chemical", v:"pm2_5", title:"PM2.5 in the air", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:1, up:"More particles", down:"Cleaner", floor0:true, threshold:25, card:false},
+  {g:"chemical", v:"no2", title:"Nitrogen dioxide", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:0, up:"More", down:"Less", floor0:true, card:false},
+  {g:"chemical", v:"ozone", title:"Ozone", loc:"gibraltar_airport", where:"Gibraltar", unit:"µg/m³", dp:0, up:"More", down:"Less", floor0:true, card:false},
   {g:"chemical", v:"nitrate", title:"Nitrate", loc:"area", unit:"mmol/m³", dp:2, up:"More nitrate", down:"Less nitrate", floor0:true, model:true},
   {g:"chemical", v:"phosphate", title:"Phosphate", loc:"area", unit:"mmol/m³", dp:3, up:"More phosphate", down:"Less phosphate", floor0:true, model:true},
   {g:"chemical", v:"oxygen", title:"Dissolved oxygen", loc:"area", unit:"mmol/m³", dp:0, up:"More oxygen", down:"Less oxygen", model:true},
@@ -1586,7 +1610,9 @@ function renderSources(){
     "NASA AERONET sun photometer network; we thank the principal investigators of the Málaga site.",
     "Wildlife sightings from NEMO, The Nautilus Project's citizen science app, reported by the public, schools and TNP teams.",
     "Sea level data from the Gibraltar tide gauge, operated by the National Oceanography Centre for the Gibraltar Port Authority, via the IOC Sea Level Station Monitoring Facility.",
-    "Weather forecasts from Open-Meteo.com (CC BY 4.0).",
+    "Weather forecasts and air quality from Open-Meteo.com (CC BY 4.0), air quality derived from the Copernicus Atmosphere Monitoring Service.",
+    "Surface currents in the Strait measured by the Puertos del Estado high frequency radar network, obtained through EMODnet Physics (CC BY 4.0).",
+    "Fishing activity: apparent fishing effort powered by Global Fishing Watch (CC BY-NC 4.0). Apparent effort is inferred from AIS, so vessels without AIS do not appear.",
   ];
   $("sources").innerHTML = `<ul>${lines.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` +
     (meta ? `<p class="note">Data files last generated ${esc(new Date(meta.generated_at).toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short",timeZone:"UTC"}))} UTC.</p>` : "");
