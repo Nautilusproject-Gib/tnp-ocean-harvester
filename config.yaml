@@ -957,6 +957,18 @@ export:
           water lets it gather at the surface, which is when people see it. Records are night-time
           sightings of bioluminescence, so a dark moon makes a bloom easier to notice as well as to
           report.
+    # TNP's own strandings log, the record of truth for dead and stranded animals. Held in a
+    # spreadsheet and read straight from it, so there is no second copy to keep in step.
+    strandings:
+      enabled: true
+      url_env: STRANDINGS_URL       # private link to the workbook, held in a GitHub secret
+      file: strandings/Marine Strandings Log.xlsx   # fallback if the link is not set
+      sheet:                        # blank = the first sheet
+      recent_days: 365
+      # Which kinds count as marine. Land birds stay in the log and are shown separately rather
+      # than dropped: a Griffon Vulture on Camp Bay is a real record, it is just not an ocean one.
+      marine_groups: [cetacean, turtle, shark or ray, seabird, fish]
+
     conditions:                   # attached to every record; "area" means the record's own sea area
       - {variable: sst, location: area}
       - {variable: chl, location: area}
