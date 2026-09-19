@@ -20,6 +20,28 @@ ENDPOINT = "https://gateway.api.globalfishingwatch.org/v3/4wings/report"
 DATASET = "public-global-fishing-effort:latest"
 
 
+def clean_token(raw: str) -> str:
+    """Whitespace and a pasted "Bearer " prefix are the two ways a good token arrives broken.
+
+    A GitHub secret keeps whatever was in the clipboard, including the trailing newline you get from
+    selecting a line in a browser, and "Bearer eyJ..." doubles up once we add our own prefix.
+    """
+    t = (raw or "").strip().strip('"').strip("'")
+    if t.lower().startswith("bearer "):
+        t = t[7:].strip()
+    return t
+
+
+def token_shape(token: str, raw: str) -> str:
+    """A description of the token that is safe to put in a log: never the token itself."""
+    bits = [f"{len(token)} characters"]
+    if raw != token:
+        bits.append("had whitespace or a Bearer prefix, which was removed")
+    bits.append("looks like a JWT" if token.startswith("eyJ") and token.count(".") == 2
+                else "does NOT look like a JWT (a GFW API token starts with eyJ and has two dots)")
+    return "; ".join(bits)
+
+
 def bbox_geojson(bbox) -> str:
     """A bbox as the escaped GeoJSON string the report endpoint expects."""
     lon_min, lat_min, lon_max, lat_max = bbox
@@ -58,7 +80,8 @@ class GfwFishingEffort(Source):
     required_env = ("GFW_API_TOKEN",)
 
     def fetch(self, start: date, end: date):
-        token = os.environ.get("GFW_API_TOKEN")
+        raw = os.environ.get("GFW_API_TOKEN") or ""
+        token = clean_token(raw)
         if not token:
             raise SourceError("GFW_API_TOKEN is not set")
         area_code = self.cfg.get("area") or next(iter(self.areas()))
@@ -86,10 +109,14 @@ class GfwFishingEffort(Source):
             r = self.http_post(ENDPOINT, params=params, json=body, timeout=300,
                                headers={"Authorization": f"Bearer {token}",
                                         "Content-Type": "application/json"})
-            if r.status_code == 401:
-                raise SourceError("GFW rejected the token (401): check GFW_API_TOKEN")
-            if r.status_code in (403, 404):
-                print(f"[{self.code}]   no report for {day}..{last} ({r.status_code})")
+            if r.status_code in (401, 403):
+                raise SourceError(
+                    f"GFW rejected the token ({r.status_code}). The token in GFW_API_TOKEN is "
+                    f"{token_shape(token, raw)}. Create a token at "
+                    f"globalfishingwatch.org/our-apis/tokens and paste the long token itself, not "
+                    f"the application name or an API key. Server said: {r.text[:160]}")
+            if r.status_code == 404:
+                print(f"[{self.code}]   no report for {day}..{last} (404)")
                 day = last + timedelta(days=1)
                 continue
             if r.status_code >= 400:
