@@ -1,6 +1,8 @@
 from .base import Source, SourceError
 from .cams import CamsEac4
 from .copernicus import CopernicusGrid, CopernicusPoint
+from .erddap import ErddapGrid
+from .gfw import GfwFishingEffort
 from .nasa import NasaL3m
 from .stations import (Aeronet, IocSeaLevel, NceiIsd, OpenMeteoAirQuality, OpenMeteoArchive,
                        OpenMeteoForecast)
@@ -16,6 +18,8 @@ SOURCE_TYPES = {
     "aeronet": Aeronet,
     "openmeteo_forecast": OpenMeteoForecast,
     "ioc_sealevel": IocSeaLevel,
+    "erddap_grid": ErddapGrid,
+    "gfw_fishing_effort": GfwFishingEffort,
 }
 
 

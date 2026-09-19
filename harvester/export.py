@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 from . import derived as dv
+from . import strandings as sl
 from . import wildlife as wl
 from .db import Database
 from .stats import circular_mean_deg
@@ -350,7 +351,36 @@ def _write_series(path, config, variable, location, merged, clim, rec, options=N
     path.write_text(json.dumps(payload, separators=(",", ":")))
 
 
-def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out_dir: Path, log=print):
+def load_strandings(cfg: dict, root: Path, log=print):
+    """TNP's strandings log, from the private link if there is one, else a committed copy."""
+    if not cfg.get("enabled"):
+        return None
+    from .sources.base import Source
+    data = None
+    if cfg.get("url_env") and os.environ.get(cfg["url_env"]):
+        r = Source.http_get(os.environ[cfg["url_env"]], timeout=120)
+        if r.status_code >= 400:
+            log(f"Strandings: link returned {r.status_code}, falling back to the committed copy")
+        else:
+            data = r.content
+    if data is None and cfg.get("file") and (root / cfg["file"]).exists():
+        data = (root / cfg["file"]).read_bytes()
+    if data is None:
+        log(f"Strandings: no log found (set {cfg.get('url_env')} or add {cfg.get('file')})")
+        return None
+    # A hand-kept spreadsheet can arrive in any state, and a library can be missing from an
+    # install. Neither is a reason to lose the sea data, so nothing here is allowed to be fatal.
+    try:
+        records = sl.clean(sl.read_log(data, cfg.get("sheet")), cfg)
+    except Exception as e:
+        log(f"Strandings: could not read the log ({e})")
+        return None
+    log(f"Strandings: {len(records)} records from the log")
+    return records
+
+
+def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out_dir: Path, log=print,
+                    triggers: dict | None = None):
     """Read NEMO records, attach the conditions, and write the public summary and the private file."""
     import yaml
 
@@ -375,6 +405,11 @@ def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out
     records = wl.clean(raw, config, bbox=wcfg.get("bbox"))
     records = wl.tag_species(records, species_cfg)
     matched = wl.attach_conditions(records, merged_by_key, wcfg.get("conditions", []), tide_fit)
+
+    scfg = wcfg.get("strandings") or {}
+    log_records = load_strandings(scfg, root, log=log)
+    strandings_summary = (sl.summary(log_records, int(scfg.get("recent_days", 365)))
+                          if log_records is not None else None)
 
     private = root / wcfg.get("private_dir", "private")
     private.mkdir(parents=True, exist_ok=True)
@@ -420,12 +455,25 @@ def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out
                        "water_column_recent": int(((records["gelatinous"] == "water_column") & (day > cutoff)).sum()),
                        "stinging_recent": int((records["stinging"] & (day > cutoff)).sum()),
                        "by_month": [int(((records["gelatinous"] != "") & (day.dt.month == m)).sum())
-                                    for m in range(1, 13)]},
+                                    for m in range(1, 13)],
+                       # so an empty month can say when the last one actually was, rather than just 0
+                       "last_record": (records.loc[records["gelatinous"] != "", "local_date"].max()
+                                       if (records["gelatinous"] != "").any() else None),
+                       "total": int((records["gelatinous"] != "").sum())},
         "invasive": wl.invasive_watch(records, species_cfg),
+        # species followed closely, each appearance with the sea conditions behind it
+        "watch": [wl.watch_report(records, merged_by_key, w, triggers)
+                  for w in (wcfg.get("watch_species") or [])],
+        "strandings_log": strandings_summary,
         "strandings": {"candidates": int(len(cand)),
                        "by_group": {g: int(n) for g, n in cand["group"].value_counts().items()},
                        "by_year": {str(y): int(n) for y, n in
                                    pd.to_datetime(cand["local_date"]).dt.year.value_counts().sort_index().items()},
+                       # whether the export carried anything to read at all: with no condition field
+                       # and no notes, zero means "nothing to search", not "nothing happened"
+                       "text_source": bool(records["condition"].astype(str).str.strip().any()
+                                           or ("notes" in records and
+                                               records["notes"].astype(str).str.strip().any())),
                        "note": "from the app; the TNP strandings log is the record of truth"},
         # An export with the User column stripped out carries no contributor counts at all, so this
         # comes back empty rather than as a year of NaN.
@@ -675,8 +723,20 @@ def export(config: dict, db: Database, log=print, today=None):
 
     wcfg = ecfg.get("wildlife") or {}
     if wcfg.get("enabled"):
+        # The same event lists the bloom card uses, so a sighting and a chlorophyll bloom name the
+        # same heatwave. Each watch species picks the area it is actually reported in.
+        mhw_main = mhw_by_var.get(mcfg.get("variable", "sst"), {})
+        watch_area = next((w.get("area") for w in (wcfg.get("watch_species") or []) if w.get("area")),
+                          None)
+        wildlife_triggers = {
+            "upwelling": up_events,
+            "dust": [{"start": e["start"], "end": e["end"]} for e in events.get("episodes", [])],
+            "heatwave": (mhw_main.get(watch_area) or mhw_main.get(mcfg.get("locations", [None])[0])
+                         or {}).get("events", []),
+        }
         try:
-            n_w = export_wildlife(config, wcfg, merged_by_key, tide_fit, out_dir, log=log)
+            n_w = export_wildlife(config, wcfg, merged_by_key, tide_fit, out_dir, log=log,
+                                  triggers=wildlife_triggers)
             log(f"Wildlife: {n_w} sightings processed")
         except FileNotFoundError as e:
             log(f"Wildlife: skipped ({e})")

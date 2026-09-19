@@ -30,6 +30,9 @@ env:
   # section is skipped, so the run still succeeds but the dashboard has no sightings on it.
   NEMO_CSV_URL: ${{ secrets.NEMO_CSV_URL }}
   STRANDINGS_URL: ${{ secrets.STRANDINGS_URL }}
+  # Global Fishing Watch. Without it the fishing source skips itself and the run still
+  # succeeds, so an expired token shows up as an empty Marine traffic tab, not a failure.
+  GFW_API_TOKEN: ${{ secrets.GFW_API_TOKEN }}
 
 jobs:
   harvest:

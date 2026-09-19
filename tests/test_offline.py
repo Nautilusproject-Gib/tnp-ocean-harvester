@@ -177,6 +177,70 @@ class TestDatabaseAndExport(unittest.TestCase):
         self.assertEqual(self.db.fetch_series("sst", "bay_of_gibraltar", "s")[0][1], 16.5)
         self.assertEqual(self.db.latest_time("s"), t + timedelta(days=1))
 
+    def test_empty_backfill_does_not_claim_coverage(self):
+        """A source that fetched nothing must not record that it has covered its whole history:
+        that is what turned a parsing bug into "nothing to do" for fourteen years."""
+        self.db.log_run("brokensrc", "backfill", datetime(2026, 1, 1), datetime(2026, 1, 1),
+                        date(2012, 1, 1), date(2026, 1, 1), 0, "ok")
+        self.assertIsNone(self.db.backfill_floor("brokensrc"))    # offered again
+        # once it holds real data, the recorded floor counts as before
+        self.db.upsert_observations([Observation("brokensrc", "sst", "bay_of_gibraltar",
+                                                 datetime(2026, 1, 2), 17.0)])
+        self.assertEqual(self.db.backfill_floor("brokensrc").date(), date(2012, 1, 1))
+
+    def test_update_fetches_the_newest_window_first(self):
+        """A source that has fallen behind gets today before it gets last spring, and the gap in
+        between is still filled, forwards, on the runs after that."""
+        import harvester.runner as runner_mod
+        today = runner_mod.utc_today()
+        behind = today - timedelta(days=200)
+        cfg = {**CONFIG, "sources": {"lagger": {"type": "fake", "enabled": True,
+                                                "earliest": "2018-01-01", "chunk_days": 30,
+                                                "lookback_days": 2}},
+               "export": {"output_dir": f"{self.tmp.name}/public", "daily_priority": {}}}
+        orig = runner_mod.build_source
+        runner_mod.build_source = lambda code, config: FakeSource(code, config["sources"][code], config)
+        try:
+            # pretend an earlier run stopped 200 days ago
+            self.db.log_run("lagger", "update", datetime(2020, 1, 1), datetime(2020, 1, 1),
+                            behind - timedelta(days=30), behind, 10, "ok")
+            FakeSource.calls.clear()
+            run(cfg, self.db, only=["lagger"], mode="update", log=lambda *a: None)
+            calls = list(FakeSource.calls)
+            self.assertGreater(len(calls), 2)
+            self.assertEqual(calls[0][1], today)                 # today came first
+            self.assertLess(calls[1][0], calls[0][0])            # then back to the gap
+            self.assertEqual(calls[1][0], behind - timedelta(days=2))
+            # The frontier ignores the recent pass: it sits at the end of the forward fill, well
+            # before today, so the next run picks the remaining window up instead of skipping it.
+            frontier = self.db.update_frontier("lagger").date()
+            self.assertLess(frontier, today)
+            self.assertEqual(frontier, calls[-1][1])
+            FakeSource.calls.clear()
+            run(cfg, self.db, only=["lagger"], mode="update", log=lambda *a: None)
+            self.assertTrue(FakeSource.calls)
+            self.assertEqual(FakeSource.calls[-1][1], today)      # and it closes the gap
+        finally:
+            runner_mod.build_source = orig
+
+    def test_update_of_a_current_source_is_a_single_window(self):
+        """Nothing changes for a source that is up to date: one chunk, no recent-first shuffle."""
+        import harvester.runner as runner_mod
+        today = runner_mod.utc_today()
+        cfg = {**CONFIG, "sources": {"current": {"type": "fake", "enabled": True,
+                                                 "chunk_days": 30, "lookback_days": 3}},
+               "export": {"output_dir": f"{self.tmp.name}/public", "daily_priority": {}}}
+        orig = runner_mod.build_source
+        runner_mod.build_source = lambda code, config: FakeSource(code, config["sources"][code], config)
+        try:
+            self.db.log_run("current", "update", datetime(2020, 1, 1), datetime(2020, 1, 1),
+                            today - timedelta(days=4), today - timedelta(days=1), 5, "ok")
+            FakeSource.calls.clear()
+            run(cfg, self.db, only=["current"], mode="update", log=lambda *a: None)
+            self.assertEqual(len(FakeSource.calls), 1)
+        finally:
+            runner_mod.build_source = orig
+
     def test_run_backfill_resume_and_export(self):
         import harvester.runner as runner_mod
         cfg = {**CONFIG, "sources": {"fake_rep": {"type": "fake", "enabled": True, "earliest": "2018-01-01",
@@ -781,6 +845,198 @@ NEMO_SAMPLE = """ID,Reported,Parent,Species,User,Group,Lat,Lon,Notes,Verified
 """
 
 
+class StrandingsTests(unittest.TestCase):
+    """TNP's own log: read, tidied and classified."""
+
+    CSV = ("junk,,,,\n"
+           "Date ,Location ,Species,Condition ,Collected by:,COD \n"
+           "06/12/2019,Western Beach ,Swan,Alive,,Entangled\n"
+           "02/08/2020,BGTW,Common Dolphin ,Deceased ,,Entangled\n"
+           "15/07/2021,Rosia Bay,Razorbills x 2,Highly  Decomposed,TNP,\n"
+           "28/06/2024,Common Dolphin,Ocean Village,Alive ,TNP/EPRU,\n"
+           ",,,,,\n")
+
+    def setUp(self):
+        from harvester import strandings as sl
+        self.sl = sl
+        self.records = sl.clean(sl.read_log(self.CSV))
+
+    def test_header_is_found_below_a_junk_row(self):
+        df = self.sl.read_log(self.CSV)
+        self.assertIn("species", df.columns)
+        self.assertIn("condition", df.columns)
+
+    def test_counts_hidden_in_the_name_are_counted(self):
+        row = self.records[self.records["species"].str.contains("Razorbill")].iloc[0]
+        self.assertEqual(int(row["count"]), 2)
+        self.assertEqual(row["species"], "Razorbill")
+        self.assertEqual(row["state"], "decomposed")        # "Highly  Decomposed", double space
+
+    def test_swapped_species_and_location_are_put_right(self):
+        row = self.records[self.records["species"] == "Common Dolphin"].iloc[-1]
+        self.assertEqual(row["location"], "Ocean Village")
+        self.assertEqual(row["group"], "cetacean")
+
+    def test_blank_rows_are_dropped_and_everything_classifies(self):
+        self.assertEqual(len(self.records), 4)
+        self.assertNotIn("unknown", set(self.records["group"]))
+
+    def test_summary_counts_animals_not_rows(self):
+        s = self.sl.summary(self.records, today="2026-09-20")
+        self.assertEqual(s["records"], 4)
+        self.assertEqual(s["animals"], 5)                   # the two razorbills
+        self.assertEqual(s["first"], "2019-12-06")
+        self.assertEqual(s["by_state"]["alive"], 2)
+
+    def test_a_missing_library_is_not_fatal(self):
+        """The sea data must publish even when the log cannot be opened."""
+        import builtins
+        from harvester.export import load_strandings
+        real = builtins.__import__
+
+        def blocked(name, *a, **k):
+            if name == "openpyxl":
+                raise ImportError("not installed")
+            return real(name, *a, **k)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "log").mkdir()
+            (tmp / "log" / "book.xlsx").write_bytes(b"PK\x03\x04 pretend workbook")
+            msgs = []
+            builtins.__import__ = blocked
+            try:
+                out = load_strandings({"enabled": True, "file": "log/book.xlsx"}, tmp,
+                                      log=msgs.append)
+            finally:
+                builtins.__import__ = real
+        self.assertIsNone(out)
+        self.assertTrue(any("openpyxl" in m for m in msgs), msgs)
+
+
+class ErddapTests(unittest.TestCase):
+    """HF radar surface currents from an ERDDAP griddap CSV."""
+
+    CSV = (
+        "time,depth,latitude,longitude,EWCT,NSCT,QCflag\n"
+        "UTC,m,degrees_north,degrees_east,m s-1,m s-1,\n"
+        "2026-09-01T00:00:00Z,0.0,36.0,-5.6,0.50,0.00,1\n"     # due east, good
+        "2026-09-01T00:00:00Z,0.0,36.0,-5.5,0.30,0.00,1\n"     # due east, good
+        "2026-09-01T01:00:00Z,0.0,36.0,-5.6,9.90,9.90,4\n"     # nonsense, flagged bad
+        "2026-09-01T02:00:00Z,0.0,36.0,-5.5,NaN,NaN,1\n"       # gap
+        "2026-09-02T00:00:00Z,0.0,36.0,-5.6,0.00,-1.00,1\n"    # due south
+    )
+
+    def test_parse_and_daily_vector_means(self):
+        from harvester.sources import erddap as er
+        rows = er.parse_griddap_csv(self.CSV)
+        self.assertEqual(len(rows), 5)
+        means = er.daily_vector_means(rows, "EWCT", "NSCT", ["QCflag"])
+        self.assertEqual(sorted(means), ["2026-09-01", "2026-09-02"])
+        first = means["2026-09-01"]
+        self.assertEqual(first["cells"], 2)                 # the bad and the empty cell are gone
+        self.assertAlmostEqual(first["u"], 0.40, places=6)
+        self.assertAlmostEqual(first["speed"], 0.40, places=6)
+        self.assertAlmostEqual(first["dir"], 90.0, places=3)      # towards the east
+        self.assertAlmostEqual(means["2026-09-02"]["dir"], 180.0, places=3)   # towards the south
+
+    def test_opposing_hours_average_to_slack_not_fast(self):
+        """A flooding hour and an ebbing hour cancel. Averaging speeds instead would report a
+        strong current on a day when the water barely went anywhere."""
+        from harvester.sources import erddap as er
+        rows = [{"time": "2026-09-03T00:00:00Z", "EWCT": 1.0, "NSCT": 0.0, "QCflag": 1},
+                {"time": "2026-09-03T01:00:00Z", "EWCT": -1.0, "NSCT": 0.0, "QCflag": 1}]
+        m = er.daily_vector_means(rows, "EWCT", "NSCT", ["QCflag"])["2026-09-03"]
+        self.assertAlmostEqual(m["speed"], 0.0, places=6)
+
+    def test_query_has_all_four_axes_in_order(self):
+        from harvester.sources import erddap as er
+        q = er.build_query("DS", ["EWCT", "NSCT"], "2026-09-01T00:00:00Z", "2026-09-01T23:59:59Z",
+                           [-5.6, 35.9, -5.2, 36.19], 0.0)
+        self.assertEqual(q.count("EWCT["), 1)
+        self.assertIn("EWCT[(2026-09-01T00:00:00Z):1:(2026-09-01T23:59:59Z)][(0.0):1:(0.0)]"
+                      "[(35.9):1:(36.19)][(-5.6):1:(-5.2)]", q)
+        self.assertIn(",NSCT[", q)
+
+
+class GfwTests(unittest.TestCase):
+    def test_daily_hours_sums_the_groups(self):
+        from harvester.sources import gfw
+        entries = [{"date": "2026-09-01", "flag": "ESP", "hours": 10.5},
+                   {"date": "2026-09-01", "flag": "MAR", "hours": 4.5},
+                   {"date": "2026-09-02", "flag": "ESP", "hours": 2.0},
+                   {"date": "2026-09-02", "flag": None, "hours": None}]     # ignored
+        out = gfw.daily_hours(entries)
+        self.assertAlmostEqual(out["2026-09-01"]["hours"], 15.0)
+        self.assertEqual(sorted(out["2026-09-01"]["by_flag"]), ["ESP", "MAR"])
+        self.assertAlmostEqual(out["2026-09-02"]["hours"], 2.0)
+
+    def test_token_is_cleaned_before_use(self):
+        """A secret keeps whatever was pasted, including the newline from selecting a line in a
+        browser and a "Bearer " prefix that would then be doubled up."""
+        from harvester.sources.gfw import clean_token
+        for raw in ("eyJabc.def.ghi\n", "  eyJabc.def.ghi  ", "Bearer eyJabc.def.ghi",
+                    '"eyJabc.def.ghi"'):
+            self.assertEqual(clean_token(raw), "eyJabc.def.ghi")
+
+    def test_folded_token_is_rejoined(self):
+        """Copying a long token out of a browser can fold it across lines."""
+        from harvester.sources.gfw import clean_token
+        self.assertEqual(clean_token("eyJab c.de\nf.gh i\n"), "eyJabc.def.ghi")
+
+    def test_token_shape_never_leaks_the_token(self):
+        from harvester.sources.gfw import token_shape
+        secret = "eyJsupersecret.payload.signature"
+        msg = token_shape(secret, secret + "\n")
+        self.assertNotIn(secret, msg)
+        self.assertNotIn("supersecret", msg)
+        self.assertIn("looks like a JWT", msg)
+        self.assertIn("does NOT look like a JWT", token_shape("abc123", "abc123"))
+
+    def test_rows_are_found_whatever_container_they_arrive_in(self):
+        """One request per dataset comes back as a list of lists, some responses key the rows by
+        dataset id, and the field names change with the grouping asked for."""
+        from harvester.sources.gfw import daily_hours
+        cases = [
+            [{"date": "2026-01-01", "flag": "ESP", "hours": 3.5}],
+            [[{"date": "2026-01-01", "flag": "ESP", "hours": 3.5}]],
+            [{"public-global-fishing-effort:latest": [{"date": "2026-01-01", "hours": 3.5,
+                                                       "flag": "ESP"}]}],
+            [{"dateTime": "2026-01-01T00:00:00Z", "fishingHours": 3.5, "flagState": "ESP"}],
+        ]
+        for entries in cases:
+            out = daily_hours(entries)
+            self.assertEqual(list(out), ["2026-01-01"], entries)
+            self.assertAlmostEqual(out["2026-01-01"]["hours"], 3.5)
+
+    def test_empty_payload_is_described_without_dumping_it(self):
+        from harvester.sources.gfw import describe_payload
+        msg = describe_payload({"entries": [], "total": 0, "metadata": {"x": "y" * 500}})
+        self.assertIn("entries=list[0]", msg)
+        self.assertLessEqual(len(msg), 400)
+
+    def test_body_shapes_are_all_valid_and_distinct(self):
+        """Each candidate body is well-formed JSON and carries the same polygon."""
+        from harvester.sources.gfw import body_shapes
+        import json as _json
+        bbox = [-5.75, 35.85, -5.40, 36.05]
+        seen = []
+        for name, body in body_shapes(bbox):
+            blob = _json.dumps(body)                       # must be serialisable as-is
+            self.assertIn("35.85", blob)
+            self.assertIn("-5.75", blob)
+            seen.append(name)
+        self.assertEqual(seen, ["object", "string", "geometry", "region"])
+
+    def test_geojson_ring_closes(self):
+        from harvester.sources import gfw
+        import json as _json
+        g = _json.loads(gfw.bbox_geojson([-5.75, 35.85, -5.40, 36.05]))
+        ring = g["features"][0]["geometry"]["coordinates"][0]
+        self.assertEqual(ring[0], ring[-1])       # a polygon that does not close is rejected
+        self.assertEqual(len(ring), 5)
+
+
 class WildlifeTests(unittest.TestCase):
     def setUp(self):
         import yaml
@@ -874,6 +1130,55 @@ class WildlifeTests(unittest.TestCase):
             self.assertEqual(payload["effort"]["contributors_per_year"], {})
             outside = [r for r in payload["recent"]["list"] if r["area"] is None]
             self.assertEqual(len(outside), 1)
+
+    def test_watch_species_events_and_drivers(self):
+        """A watched species: reports run together into appearances, each with the conditions behind
+        it and only the drivers the numbers actually support."""
+        wl = self.wl
+        # six years, because the seasonal norm asks for at least three OTHER years
+        idx = pd.date_range("2021-01-01", "2026-12-31", freq="D")
+        doy = idx.dayofyear.values
+
+        def frame(v):
+            return pd.DataFrame({"value": v, "source": "t"}, index=idx)
+
+        # a plain seasonal sea, plus a deliberate warm spell over the 2026 sighting
+        sst = 18 + 4.0 * np.sin((doy - 100) / 365 * 2 * np.pi)
+        warm = (idx >= "2026-07-01") & (idx <= "2026-07-20")
+        merged = {("sst", "bay_of_gibraltar"): frame(sst + np.where(warm, 3.0, 0.0)),
+                  ("chl", "bay_of_gibraltar"): frame(np.full(len(idx), 0.5)),
+                  ("wind_speed", "gibraltar_airport"): frame(np.full(len(idx), 20.0)),
+                  ("upwelling_index", "gibraltar_airport"): frame(np.zeros(len(idx)))}
+        rows = pd.DataFrame({
+            "species": ["Sea sparkle"] * 4,
+            "group": ["Marine Phytoplankton"] * 4,
+            "local_date": ["2026-07-10", "2026-07-11", "2026-07-12", "2025-03-04"],
+            "area": ["bay_of_gibraltar"] * 4,
+            "verified": [True, False, False, False],
+        })
+        cfg = {"species": "Marine Phytoplankton|Sea sparkle", "name": "Sea sparkle",
+               "scientific": "Noctiluca scintillans", "area": "bay_of_gibraltar",
+               "max_gap_days": 3, "warm_sea_c": 1.0, "dark_moon_pct": 35}
+        r = wl.watch_report(rows, merged, cfg,
+                            {"heatwave": [{"start": "2026-07-01", "end": "2026-07-20"}]})
+        self.assertEqual(r["records"], 4)
+        self.assertEqual(len(r["events"]), 2)                     # July run, and the lone March one
+        july = r["events"][0]
+        self.assertEqual((july["start"], july["end"], july["records"]), ("2026-07-10", "2026-07-12", 3))
+        self.assertGreater(july["sst_vs_usual"], 2.0)             # against other years, not its own
+        self.assertIn("heatwave", july["drivers"])
+        self.assertNotIn("warm_sea", july["drivers"])             # the heatwave says it better
+        self.assertNotIn("rich_water", july["drivers"])           # chlorophyll is flat, so no claim
+        self.assertNotIn("upwelling", r["events"][1]["drivers"])  # index is zero all year
+        labels = [p["label"] for p in r["profile"]]
+        self.assertIn("Sea temperature", labels)
+
+    def test_watch_species_absent_is_empty_not_broken(self):
+        cfg = {"species": "Jellyfish|Not a real species", "name": "Nothing"}
+        r = self.wl.watch_report(self.clean, {}, cfg)
+        self.assertEqual(r["records"], 0)
+        self.assertEqual(r["events"], [])
+        self.assertIsNone(r["first"])
 
     def test_cleaning_times_flags_and_area(self):
         c = self.clean

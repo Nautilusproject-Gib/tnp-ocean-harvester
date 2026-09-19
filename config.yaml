@@ -129,7 +129,7 @@ sources:
     description: Mediterranean wave reanalysis 4.2 km, hourly
     dataset_id: cmems_mod_med_wav_my_4.2km_PT1H-i
     product: MEDSEA_MULTIYEAR_WAV_006_012
-    variables: {VHM0: wave_hs, VMDR: wave_dir, VTM10: wave_tm10, VTPK: wave_tp}
+    variables: {VHM0: wave_hs, VMDR: wave_dir, VTPK: wave_tp}   # Tm-10 dropped: peak period covers it
     points: [europa_point, bay_centre]
     earliest: "1985-01-01"
     chunk_days: 365
@@ -142,7 +142,7 @@ sources:
     description: Mediterranean wave analysis and forecast 4.2 km, hourly
     dataset_id: cmems_mod_med_wav_anfc_4.2km_PT1H-i
     product: MEDSEA_ANALYSISFORECAST_WAV_006_017
-    variables: {VHM0: wave_hs, VMDR: wave_dir, VTM10: wave_tm10, VTPK: wave_tp}
+    variables: {VHM0: wave_hs, VMDR: wave_dir, VTPK: wave_tp}   # Tm-10 dropped: peak period covers it
     points: [europa_point, bay_centre]
     earliest: "2021-11-30"
     chunk_days: 180
@@ -593,6 +593,76 @@ sources:
     earliest: "1973-01-01"
     lookback_days: 5
 
+  # ---- Copernicus Marine: satellite altimetry, for sea level rise ----
+  # Daily maps of how high the sea stands against a 1993-2012 average. The tide gauge shows today's
+  # water level; this is the only thing here that shows the trend underneath it.
+  cmems_sealevel_my:
+    label: Copernicus altimetry (reprocessed)
+    enabled: true
+    type: copernicus_grid
+    description: European seas gridded sea level anomaly and absolute dynamic topography, 0.0625 deg, reprocessed
+    dataset_id: cmems_obs-sl_eur_phy-ssh_my_allsat-l4-duacs-0.0625deg_P1D
+    product: SEALEVEL_EUR_PHY_L4_MY_008_068
+    variables:
+      sla: {code: sea_level_anomaly, match: "above sea level"}
+    earliest: "1993-01-01"
+    chunk_days: 1825                 # coarse grid, small area: long chunks are cheap
+    lookback_days: 30                # reprocessed data lands months late
+
+  cmems_sealevel_nrt:
+    label: Copernicus altimetry (near real time)
+    enabled: true
+    type: copernicus_grid
+    description: European seas gridded sea level anomaly, 0.0625 deg, near real time
+    dataset_id: cmems_obs-sl_eur_phy-ssh_nrt_allsat-l4-duacs-0.0625deg_P1D
+    product: SEALEVEL_EUR_PHY_L4_NRT_008_060
+    variables:
+      sla: {code: sea_level_anomaly, match: "above sea level"}
+    earliest: "2022-10-04"
+    chunk_days: 365
+    lookback_days: 10
+
+  # ---------------- EMODnet Physics (no account, CC-BY) ----------------
+  # Surface currents across the Strait, measured hourly by the Puertos del Estado HF radar network
+  # and redistributed by EMODnet. Everything else we hold for the Strait is a model.
+  emodnet_hfradar_strait:
+    label: HF radar, Strait of Gibraltar
+    enabled: true
+    type: erddap_grid
+    description: Puertos del Estado HF radar surface currents via EMODnet Physics, hourly, ~1 km
+    server: https://erddap.emodnet-physics.eu/erddap
+    dataset_id: EUHFR_NRTcurrent_HFR-Gibraltar-Total
+    area: strait_of_gibraltar
+    grid_limits: [-5.848, 35.806, -4.995, 36.192]   # the radar footprint; griddap errors outside it
+    u: EWCT
+    v: NSCT
+    qc_variables: [QCflag]           # 1 = passed every test; anything else is dropped
+    depth: 0.0                       # surface only
+    codes:
+      speed: hf_current_speed
+      dir: hf_current_dir
+    earliest: "2019-10-30"
+    chunk_days: 10                   # hourly on a 44 x 78 grid: small bites
+    lookback_days: 5
+
+  # ---------------- Global Fishing Watch (free token, CC BY-NC) ----------------
+  # Apparent fishing effort inferred from AIS. Non-commercial use only, and the credit travels with
+  # the numbers, so "Powered by Global Fishing Watch" has to stay on the page.
+  gfw_fishing_strait:
+    label: Global Fishing Watch
+    enabled: true
+    type: gfw_fishing_effort
+    optional: true                   # a fishing token problem must not fail the whole harvest
+    description: Apparent fishing hours from AIS, aggregated over the Strait of Gibraltar
+    area: strait_of_gibraltar
+    group_by: FLAG
+    codes:
+      hours: fishing_hours
+      flags: fishing_flags
+    earliest: "2012-01-01"
+    chunk_days: 90
+    lookback_days: 10                # GFW revises recent days as more AIS arrives
+
   # ---------------- Open-Meteo (no account, non-commercial use) ----------------
   openmeteo_era5:
     label: ERA5 reanalysis
@@ -616,12 +686,16 @@ sources:
     label: CAMS forecast
     enabled: true
     type: openmeteo_airquality
-    description: CAMS atmospheric composition via Open-Meteo, hourly dust and aerosols
+    description: CAMS atmospheric composition via Open-Meteo, hourly dust, aerosols and air quality
     points: [gibraltar_airport]
     variables:
       dust: dust_sfc
       aerosol_optical_depth: aod_550
-      pm10: pm10_model
+      pm10: pm10
+      pm2_5: pm2_5
+      nitrogen_dioxide: no2
+      ozone: ozone
+      uv_index: uv_index
     earliest: "2022-08-01"
     chunk_days: 90
     lookback_days: 5
@@ -677,7 +751,9 @@ sources:
   # ---------------- AERONET sun photometers (no account) ----------------
   aeronet:
     label: AERONET Málaga
-    enabled: true
+    # Off: the Málaga sun photometer has returned no rows on every run since August 2026. Dust is
+    # covered by CAMS. Turn this back on if the site starts reporting again.
+    enabled: false
     type: aeronet
     description: NASA AERONET v3 Level 1.5 daily averages
     sites: [Malaga]
@@ -706,6 +782,11 @@ variables:
   temp_30m:     {group: physical, name: "Sea temperature at 30 m (model)", unit: degC, valid_range: [5, 35]}
   temp_50m:     {group: physical, name: "Sea temperature at 50 m (model)", unit: degC, valid_range: [5, 35]}
   temp_100m:    {group: physical, name: "Sea temperature at 100 m (model)", unit: degC, valid_range: [5, 35]}
+  sea_level_anomaly: {group: physical, name: "Sea level against the 1993-2012 average (satellite)", unit: m, valid_range: [-1.5, 1.5]}
+  hf_current_speed: {group: physical, name: "Surface current speed (HF radar, measured)", unit: m s-1, valid_range: [0, 5]}
+  hf_current_dir: {group: physical, name: "Surface current direction (HF radar, towards)", unit: deg}
+  fishing_hours: {group: traffic, name: "Apparent fishing hours", unit: hours, valid_range: [0, 100000]}
+  fishing_flags: {group: traffic, name: "Countries fishing here", unit: count, valid_range: [0, 100]}
   upwelling_index: {group: physical, name: "Upwelling index (offshore Ekman transport, NW Alboran coast)", unit: m3 s-1 km-1}
   par_5m:       {group: physical, name: "Light (PAR) reaching 5 m", unit: einstein m-2 day-1, valid_range: [0, 130]}
   par_10m:      {group: physical, name: "Light (PAR) reaching 10 m", unit: einstein m-2 day-1, valid_range: [0, 130]}
@@ -717,7 +798,6 @@ variables:
   mld:          {group: physical, name: "Mixed layer depth (model)", unit: m, valid_range: [0, 1000]}
   wave_hs:      {group: physical, name: "Significant wave height", unit: m, valid_range: [0, 20]}
   wave_dir:     {group: physical, name: "Mean wave direction (from)", unit: deg}
-  wave_tm10:    {group: physical, name: "Mean wave period Tm-10", unit: s, valid_range: [0, 30]}
   wave_tp:      {group: physical, name: "Peak wave period", unit: s, valid_range: [0, 30]}
   wind_speed:   {group: physical, name: "Wind speed at 10 m", unit: m s-1, valid_range: [0, 75]}
   wind_dir:     {group: physical, name: "Wind direction (from)", unit: deg}
@@ -737,7 +817,11 @@ variables:
   dust_sfc:     {group: chemical, name: "Surface dust concentration (CAMS)", unit: ug m-3, valid_range: [0, 20000]}
   aod_550:      {group: chemical, name: "Aerosol optical depth 550 nm", unit: "1"}
   dust_aod_550: {group: chemical, name: "Dust aerosol optical depth 550 nm", unit: "1"}
-  pm10_model:   {group: chemical, name: "PM10 (CAMS model)", unit: ug m-3}
+  pm10:         {group: chemical, name: "PM10 particles in the air", unit: ug m-3, valid_range: [0, 1000]}
+  pm2_5:        {group: chemical, name: "PM2.5 particles in the air", unit: ug m-3, valid_range: [0, 500]}
+  no2:          {group: chemical, name: "Nitrogen dioxide", unit: ug m-3, valid_range: [0, 500]}
+  ozone:        {group: chemical, name: "Ozone", unit: ug m-3, valid_range: [0, 500]}
+  uv_index:     {group: physical, name: "UV index", unit: index, valid_range: [0, 14]}
   aeronet_aod_500: {group: chemical, name: "AERONET aerosol optical depth 500 nm", unit: "1"}
   aeronet_ae_440_870: {group: chemical, name: "AERONET Angstrom exponent 440-870 nm", unit: "1"}
   nitrate:      {group: chemical, name: "Nitrate (model)", unit: mmol m-3, valid_range: [0, 50]}
@@ -849,7 +933,43 @@ export:
     recent_days: 30
     bloom_min_records: 3            # a gelatinous "bloom" day: at least this many records
     bloom_min_share: 0.4            # and at least this share of everything reported that day
-    conditions:                     # attached to every record; "area" means the record's own sea area
+
+    # Species followed closely, with the sea conditions behind every appearance. Thresholds are here
+    # rather than in the code so they can be argued with: each one decides whether a driver is named
+    # on the card, and none of them changes the underlying numbers.
+    watch_species:
+      - species: "Marine Phytoplankton|Sea sparkle"
+        name: Sea sparkle
+        scientific: Noctiluca scintillans
+        area: bay_of_gibraltar     # blank = wherever it is most often reported
+        max_gap_days: 3            # reports this close together are one appearance
+        lead_days: 3               # wind is read over the days before, not the night itself
+        upwelling_lead_days: 5
+        warm_sea_c: 1.0            # sea this far above the usual for the date counts as warm
+        upwelling_threshold: 500   # m3/s per km, same threshold as the upwelling events card
+        calm_ratio: 0.8            # wind below this share of the usual counts as calm
+        rich_water_ratio: 1.25     # chlorophyll needs this much above the usual to count
+        dark_moon_pct: 35          # below this the moon is down enough to see bioluminescence easily
+        trigger_lookback_days: 10
+        note: >-
+          Noctiluca is not a true alga and does not bloom on nutrients alone: it grazes on other
+          plankton, so it tends to follow a diatom bloom rather than start one. Warm, calm, stratified
+          water lets it gather at the surface, which is when people see it. Records are night-time
+          sightings of bioluminescence, so a dark moon makes a bloom easier to notice as well as to
+          report.
+    # TNP's own strandings log, the record of truth for dead and stranded animals. Held in a
+    # spreadsheet and read straight from it, so there is no second copy to keep in step.
+    strandings:
+      enabled: true
+      url_env: STRANDINGS_URL       # private link to the workbook, held in a GitHub secret
+      file: strandings/Marine Strandings Log.xlsx   # fallback if the link is not set
+      sheet:                        # blank = the first sheet
+      recent_days: 365
+      # Which kinds count as marine. Land birds stay in the log and are shown separately rather
+      # than dropped: a Griffon Vulture on Camp Bay is a real record, it is just not an ocean one.
+      marine_groups: [cetacean, turtle, shark or ray, seabird, fish]
+
+    conditions:                   # attached to every record; "area" means the record's own sea area
       - {variable: sst, location: area}
       - {variable: chl, location: area}
       - {variable: kd490, location: area}
@@ -874,8 +994,17 @@ export:
     sst: [cmems_med_sst_rep, cmems_med_sst_nrt]
     par: [nasa_par_pace_nrt, nasa_par_modisa, nasa_par_seawifs]
     wave_hs: [cmems_med_waves_my, cmems_med_waves_anfc]
-    wave_tm10: [cmems_med_waves_my, cmems_med_waves_anfc]
     wave_tp: [cmems_med_waves_my, cmems_med_waves_anfc]
+    sea_level_anomaly: [cmems_sealevel_my, cmems_sealevel_nrt]   # reprocessed first, NRT fills the tail
+    hf_current_speed: [emodnet_hfradar_strait]
+    hf_current_dir: [emodnet_hfradar_strait]
+    fishing_hours: [gfw_fishing_strait]
+    fishing_flags: [gfw_fishing_strait]
+    pm10: [openmeteo_cams_dust]
+    pm2_5: [openmeteo_cams_dust]
+    no2: [openmeteo_cams_dust]
+    ozone: [openmeteo_cams_dust]
+    uv_index: [openmeteo_cams_dust]
     # ERA5 first for weather so the combined series is one consistent product;
     # the airport station can still be chosen on the dashboard.
     wind_speed: [openmeteo_era5, ncei_isd_lxgb, openmeteo_forecast]

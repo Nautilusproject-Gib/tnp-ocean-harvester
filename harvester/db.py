@@ -259,6 +259,22 @@ class Database:
             return datetime.fromisoformat(v)
         return v
 
+    def update_frontier(self, source: str) -> datetime | None:
+        """How far the ordinary forward catch-up has actually reached.
+
+        Not the newest row: a source that is behind fetches today first, so the newest row can be
+        months ahead of the part that is filled in solidly. Planning from the newest row would step
+        over the hole in between and never come back to it, so the frontier is the end of the last
+        successful *update* chunk instead.
+        """
+        with self.cursor() as cur:
+            cur.execute(f"SELECT MAX(range_end) FROM harvest_runs WHERE source={self.ph} "
+                        f"AND mode='update' AND status='ok'", (source,))
+            v = cur.fetchone()[0]
+        if v is None:
+            return None
+        return datetime.fromisoformat(v) if isinstance(v, str) else v
+
     def earliest_time(self, source: str) -> datetime | None:
         with self.cursor() as cur:
             cur.execute(f"SELECT MIN(obs_time) FROM observations WHERE source = {self.ph}", (source,))
@@ -275,7 +291,17 @@ class Database:
                               self._t(range_end), n_rows, status, (message or "")[:4000]))
 
     def backfill_floor(self, source: str) -> datetime | None:
-        """Earliest date already covered by a successful backfill chunk."""
+        """Earliest date already covered by a successful backfill chunk.
+
+        A backfill that fetched nothing still finishes "ok", so a source that was quietly failing
+        to read its own responses ends up claiming it has covered everything back to the start and
+        will never look again. If a source holds no observations at all, its backfill history is
+        treated as worthless and the range is offered again.
+        """
+        with self.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) FROM observations WHERE source={self.ph}", (source,))
+            if cur.fetchone()[0] == 0:
+                return None
         with self.cursor() as cur:
             cur.execute(f"SELECT MIN(range_start) FROM harvest_runs WHERE source={self.ph} "
                         f"AND mode='backfill' AND status='ok'", (source,))
