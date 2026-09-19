@@ -177,6 +177,17 @@ class TestDatabaseAndExport(unittest.TestCase):
         self.assertEqual(self.db.fetch_series("sst", "bay_of_gibraltar", "s")[0][1], 16.5)
         self.assertEqual(self.db.latest_time("s"), t + timedelta(days=1))
 
+    def test_empty_backfill_does_not_claim_coverage(self):
+        """A source that fetched nothing must not record that it has covered its whole history:
+        that is what turned a parsing bug into "nothing to do" for fourteen years."""
+        self.db.log_run("brokensrc", "backfill", datetime(2026, 1, 1), datetime(2026, 1, 1),
+                        date(2012, 1, 1), date(2026, 1, 1), 0, "ok")
+        self.assertIsNone(self.db.backfill_floor("brokensrc"))    # offered again
+        # once it holds real data, the recorded floor counts as before
+        self.db.upsert_observations([Observation("brokensrc", "sst", "bay_of_gibraltar",
+                                                 datetime(2026, 1, 2), 17.0)])
+        self.assertEqual(self.db.backfill_floor("brokensrc").date(), date(2012, 1, 1))
+
     def test_update_fetches_the_newest_window_first(self):
         """A source that has fallen behind gets today before it gets last spring, and the gap in
         between is still filled, forwards, on the runs after that."""
