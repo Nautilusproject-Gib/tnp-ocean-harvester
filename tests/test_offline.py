@@ -875,6 +875,55 @@ class WildlifeTests(unittest.TestCase):
             outside = [r for r in payload["recent"]["list"] if r["area"] is None]
             self.assertEqual(len(outside), 1)
 
+    def test_watch_species_events_and_drivers(self):
+        """A watched species: reports run together into appearances, each with the conditions behind
+        it and only the drivers the numbers actually support."""
+        wl = self.wl
+        # six years, because the seasonal norm asks for at least three OTHER years
+        idx = pd.date_range("2021-01-01", "2026-12-31", freq="D")
+        doy = idx.dayofyear.values
+
+        def frame(v):
+            return pd.DataFrame({"value": v, "source": "t"}, index=idx)
+
+        # a plain seasonal sea, plus a deliberate warm spell over the 2026 sighting
+        sst = 18 + 4.0 * np.sin((doy - 100) / 365 * 2 * np.pi)
+        warm = (idx >= "2026-07-01") & (idx <= "2026-07-20")
+        merged = {("sst", "bay_of_gibraltar"): frame(sst + np.where(warm, 3.0, 0.0)),
+                  ("chl", "bay_of_gibraltar"): frame(np.full(len(idx), 0.5)),
+                  ("wind_speed", "gibraltar_airport"): frame(np.full(len(idx), 20.0)),
+                  ("upwelling_index", "gibraltar_airport"): frame(np.zeros(len(idx)))}
+        rows = pd.DataFrame({
+            "species": ["Sea sparkle"] * 4,
+            "group": ["Marine Phytoplankton"] * 4,
+            "local_date": ["2026-07-10", "2026-07-11", "2026-07-12", "2025-03-04"],
+            "area": ["bay_of_gibraltar"] * 4,
+            "verified": [True, False, False, False],
+        })
+        cfg = {"species": "Marine Phytoplankton|Sea sparkle", "name": "Sea sparkle",
+               "scientific": "Noctiluca scintillans", "area": "bay_of_gibraltar",
+               "max_gap_days": 3, "warm_sea_c": 1.0, "dark_moon_pct": 35}
+        r = wl.watch_report(rows, merged, cfg,
+                            {"heatwave": [{"start": "2026-07-01", "end": "2026-07-20"}]})
+        self.assertEqual(r["records"], 4)
+        self.assertEqual(len(r["events"]), 2)                     # July run, and the lone March one
+        july = r["events"][0]
+        self.assertEqual((july["start"], july["end"], july["records"]), ("2026-07-10", "2026-07-12", 3))
+        self.assertGreater(july["sst_vs_usual"], 2.0)             # against other years, not its own
+        self.assertIn("heatwave", july["drivers"])
+        self.assertNotIn("warm_sea", july["drivers"])             # the heatwave says it better
+        self.assertNotIn("rich_water", july["drivers"])           # chlorophyll is flat, so no claim
+        self.assertNotIn("upwelling", r["events"][1]["drivers"])  # index is zero all year
+        labels = [p["label"] for p in r["profile"]]
+        self.assertIn("Sea temperature", labels)
+
+    def test_watch_species_absent_is_empty_not_broken(self):
+        cfg = {"species": "Jellyfish|Not a real species", "name": "Nothing"}
+        r = self.wl.watch_report(self.clean, {}, cfg)
+        self.assertEqual(r["records"], 0)
+        self.assertEqual(r["events"], [])
+        self.assertIsNone(r["first"])
+
     def test_cleaning_times_flags_and_area(self):
         c = self.clean
         self.assertEqual(len(c), 7)                                  # the Spanish inland record is dropped
