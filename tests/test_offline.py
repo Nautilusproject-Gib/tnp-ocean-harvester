@@ -913,6 +913,28 @@ class GfwTests(unittest.TestCase):
         self.assertIn("looks like a JWT", msg)
         self.assertIn("does NOT look like a JWT", token_shape("abc123", "abc123"))
 
+    def test_rows_are_found_whatever_container_they_arrive_in(self):
+        """One request per dataset comes back as a list of lists, some responses key the rows by
+        dataset id, and the field names change with the grouping asked for."""
+        from harvester.sources.gfw import daily_hours
+        cases = [
+            [{"date": "2026-01-01", "flag": "ESP", "hours": 3.5}],
+            [[{"date": "2026-01-01", "flag": "ESP", "hours": 3.5}]],
+            [{"public-global-fishing-effort:latest": [{"date": "2026-01-01", "hours": 3.5,
+                                                       "flag": "ESP"}]}],
+            [{"dateTime": "2026-01-01T00:00:00Z", "fishingHours": 3.5, "flagState": "ESP"}],
+        ]
+        for entries in cases:
+            out = daily_hours(entries)
+            self.assertEqual(list(out), ["2026-01-01"], entries)
+            self.assertAlmostEqual(out["2026-01-01"]["hours"], 3.5)
+
+    def test_empty_payload_is_described_without_dumping_it(self):
+        from harvester.sources.gfw import describe_payload
+        msg = describe_payload({"entries": [], "total": 0, "metadata": {"x": "y" * 500}})
+        self.assertIn("entries=list[0]", msg)
+        self.assertLessEqual(len(msg), 400)
+
     def test_body_shapes_are_all_valid_and_distinct(self):
         """Each candidate body is well-formed JSON and carries the same polygon."""
         from harvester.sources.gfw import body_shapes
