@@ -118,15 +118,31 @@ class ErddapGrid(Source):
                                 bbox, float(self.cfg.get("depth", 0.0)))
             url = f"{server}/griddap/{dataset}.csv?{query}"
             r = self.http_get(url, timeout=300)
-            if r.status_code in (403, 404):
-                print(f"[{self.code}]   no data for {day}..{last} ({r.status_code})")
-                day = last + timedelta(days=1)
-                continue
-            # ERDDAP answers "no rows in range" with a 404-ish message body rather than an error
-            if "nRows = 0" in r.text or not r.text.strip():
-                day = last + timedelta(days=1)
-                continue
-            means = daily_vector_means(parse_griddap_csv(r.text), u_name, v_name, flags)
+            text = r.text if r.status_code < 400 else ""
+            # griddap refuses the whole request when any part of the range is outside the data, so
+            # one missing day at the end of a ten day window used to lose all ten. Ask again a day
+            # at a time and keep whatever the radar does have.
+            if r.status_code in (403, 404) or "nRows = 0" in text or not text.strip():
+                if (last - day).days > 0:
+                    print(f"[{self.code}]   {day}..{last} refused, retrying a day at a time")
+                    rows = []
+                    one = day
+                    while one <= last:
+                        q = build_query(dataset, [u_name, v_name] + flags,
+                                        f"{one.isoformat()}T00:00:00Z", f"{one.isoformat()}T23:59:59Z",
+                                        bbox, float(self.cfg.get("depth", 0.0)))
+                        rr = self.http_get(f"{server}/griddap/{dataset}.csv?{q}", timeout=300)
+                        if rr.status_code < 400 and rr.text.strip() and "nRows = 0" not in rr.text:
+                            rows.extend(parse_griddap_csv(rr.text))
+                        one += timedelta(days=1)
+                    text = ""
+                    means = daily_vector_means(rows, u_name, v_name, flags)
+                else:
+                    print(f"[{self.code}]   no data for {day} ({r.status_code})")
+                    day = last + timedelta(days=1)
+                    continue
+            else:
+                means = daily_vector_means(parse_griddap_csv(text), u_name, v_name, flags)
             for d, m in sorted(means.items()):
                 when = datetime.fromisoformat(f"{d}T00:00:00")
                 for key, code in codes.items():
