@@ -845,6 +845,75 @@ NEMO_SAMPLE = """ID,Reported,Parent,Species,User,Group,Lat,Lon,Notes,Verified
 """
 
 
+class StrandingsTests(unittest.TestCase):
+    """TNP's own log: read, tidied and classified."""
+
+    CSV = ("junk,,,,\n"
+           "Date ,Location ,Species,Condition ,Collected by:,COD \n"
+           "06/12/2019,Western Beach ,Swan,Alive,,Entangled\n"
+           "02/08/2020,BGTW,Common Dolphin ,Deceased ,,Entangled\n"
+           "15/07/2021,Rosia Bay,Razorbills x 2,Highly  Decomposed,TNP,\n"
+           "28/06/2024,Common Dolphin,Ocean Village,Alive ,TNP/EPRU,\n"
+           ",,,,,\n")
+
+    def setUp(self):
+        from harvester import strandings as sl
+        self.sl = sl
+        self.records = sl.clean(sl.read_log(self.CSV))
+
+    def test_header_is_found_below_a_junk_row(self):
+        df = self.sl.read_log(self.CSV)
+        self.assertIn("species", df.columns)
+        self.assertIn("condition", df.columns)
+
+    def test_counts_hidden_in_the_name_are_counted(self):
+        row = self.records[self.records["species"].str.contains("Razorbill")].iloc[0]
+        self.assertEqual(int(row["count"]), 2)
+        self.assertEqual(row["species"], "Razorbill")
+        self.assertEqual(row["state"], "decomposed")        # "Highly  Decomposed", double space
+
+    def test_swapped_species_and_location_are_put_right(self):
+        row = self.records[self.records["species"] == "Common Dolphin"].iloc[-1]
+        self.assertEqual(row["location"], "Ocean Village")
+        self.assertEqual(row["group"], "cetacean")
+
+    def test_blank_rows_are_dropped_and_everything_classifies(self):
+        self.assertEqual(len(self.records), 4)
+        self.assertNotIn("unknown", set(self.records["group"]))
+
+    def test_summary_counts_animals_not_rows(self):
+        s = self.sl.summary(self.records, today="2026-09-20")
+        self.assertEqual(s["records"], 4)
+        self.assertEqual(s["animals"], 5)                   # the two razorbills
+        self.assertEqual(s["first"], "2019-12-06")
+        self.assertEqual(s["by_state"]["alive"], 2)
+
+    def test_a_missing_library_is_not_fatal(self):
+        """The sea data must publish even when the log cannot be opened."""
+        import builtins
+        from harvester.export import load_strandings
+        real = builtins.__import__
+
+        def blocked(name, *a, **k):
+            if name == "openpyxl":
+                raise ImportError("not installed")
+            return real(name, *a, **k)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "log").mkdir()
+            (tmp / "log" / "book.xlsx").write_bytes(b"PK\x03\x04 pretend workbook")
+            msgs = []
+            builtins.__import__ = blocked
+            try:
+                out = load_strandings({"enabled": True, "file": "log/book.xlsx"}, tmp,
+                                      log=msgs.append)
+            finally:
+                builtins.__import__ = real
+        self.assertIsNone(out)
+        self.assertTrue(any("openpyxl" in m for m in msgs), msgs)
+
+
 class ErddapTests(unittest.TestCase):
     """HF radar surface currents from an ERDDAP griddap CSV."""
 
