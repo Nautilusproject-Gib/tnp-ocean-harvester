@@ -899,6 +899,11 @@ class GfwTests(unittest.TestCase):
                     '"eyJabc.def.ghi"'):
             self.assertEqual(clean_token(raw), "eyJabc.def.ghi")
 
+    def test_folded_token_is_rejoined(self):
+        """Copying a long token out of a browser can fold it across lines."""
+        from harvester.sources.gfw import clean_token
+        self.assertEqual(clean_token("eyJab c.de\nf.gh i\n"), "eyJabc.def.ghi")
+
     def test_token_shape_never_leaks_the_token(self):
         from harvester.sources.gfw import token_shape
         secret = "eyJsupersecret.payload.signature"
