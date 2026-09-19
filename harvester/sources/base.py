@@ -88,7 +88,10 @@ class Source:
                     last = SourceError(f"POST {url} rate limited (429)")
                     time.sleep(60 * (attempt + 1))
                     continue
-                if r.status_code in (401, 403, 404) or r.status_code < 400:
+                # A 4xx means the request itself is wrong, so it will be just as wrong on the
+                # fourth attempt. Hand it back and let the caller read the body, which is where
+                # the server says which field it objected to.
+                if r.status_code < 500:
                     return r
                 r.raise_for_status()
                 return r

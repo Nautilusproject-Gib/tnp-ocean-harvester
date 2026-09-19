@@ -96,11 +96,13 @@ class GfwFishingEffort(Source):
         day = start
         while day <= end:
             last = min(day + timedelta(days=step - 1), end)
+            # One number per day for the whole area, so the report is spatially aggregated. The
+            # grid resolution only means anything when it is not, and sending both is what the
+            # server rejects with a 422.
             params = {
                 "format": "JSON",
                 "group-by": self.cfg.get("group_by", "FLAG"),
                 "temporal-resolution": "DAILY",
-                "spatial-resolution": self.cfg.get("spatial_resolution", "HIGH"),
                 "spatial-aggregation": "true",
                 "datasets[0]": self.cfg.get("dataset", DATASET),
                 "date-range": f"{day.isoformat()},{last.isoformat()}",
@@ -123,7 +125,10 @@ class GfwFishingEffort(Source):
                 day = last + timedelta(days=1)
                 continue
             if r.status_code >= 400:
-                raise SourceError(f"GFW report failed ({r.status_code}): {r.text[:200]}")
+                # The body names the field it did not like, which is the only way to tell a bad
+                # parameter from a bad date range without guessing.
+                raise SourceError(f"GFW report failed ({r.status_code}) for "
+                                  f"{day}..{last}: {r.text[:400]}")
             payload = r.json()
             entries = payload.get("entries")
             # entries is sometimes a list of lists, one per requested dataset
