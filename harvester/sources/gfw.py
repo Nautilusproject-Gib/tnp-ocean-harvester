@@ -29,7 +29,10 @@ def clean_token(raw: str) -> str:
     t = (raw or "").strip().strip('"').strip("'")
     if t.lower().startswith("bearer "):
         t = t[7:].strip()
-    return t
+    # A JWT is base64url text and two dots, with no spaces or line breaks in it. Copying a long
+    # token out of a browser can fold it across lines, and the pieces then have to be joined back
+    # up or the signature will not match.
+    return "".join(t.split())
 
 
 def token_shape(token: str, raw: str) -> str:

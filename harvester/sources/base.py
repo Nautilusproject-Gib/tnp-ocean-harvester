@@ -76,11 +76,14 @@ class Source:
         an earlier one is still running, so backing off is the correct response, not an error.
         """
         import time
+        # Pop the caller's headers ONCE. Popping inside the loop meant the second attempt went out
+        # without the Authorization header, so a retry after a blip looked like a bad token.
+        headers = {"User-Agent": USER_AGENT, **kw.pop("headers", {})}
         last = None
         for attempt in range(retries):
             try:
                 r = requests.post(url, params=params, json=json, timeout=timeout,
-                                  headers={"User-Agent": USER_AGENT, **kw.pop("headers", {})}, **kw)
+                                  headers=headers, **kw)
                 if r.status_code == 429:
                     last = SourceError(f"POST {url} rate limited (429)")
                     time.sleep(60 * (attempt + 1))
