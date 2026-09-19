@@ -891,6 +891,23 @@ class GfwTests(unittest.TestCase):
         self.assertEqual(sorted(out["2026-09-01"]["by_flag"]), ["ESP", "MAR"])
         self.assertAlmostEqual(out["2026-09-02"]["hours"], 2.0)
 
+    def test_token_is_cleaned_before_use(self):
+        """A secret keeps whatever was pasted, including the newline from selecting a line in a
+        browser and a "Bearer " prefix that would then be doubled up."""
+        from harvester.sources.gfw import clean_token
+        for raw in ("eyJabc.def.ghi\n", "  eyJabc.def.ghi  ", "Bearer eyJabc.def.ghi",
+                    '"eyJabc.def.ghi"'):
+            self.assertEqual(clean_token(raw), "eyJabc.def.ghi")
+
+    def test_token_shape_never_leaks_the_token(self):
+        from harvester.sources.gfw import token_shape
+        secret = "eyJsupersecret.payload.signature"
+        msg = token_shape(secret, secret + "\n")
+        self.assertNotIn(secret, msg)
+        self.assertNotIn("supersecret", msg)
+        self.assertIn("looks like a JWT", msg)
+        self.assertIn("does NOT look like a JWT", token_shape("abc123", "abc123"))
+
     def test_geojson_ring_closes(self):
         from harvester.sources import gfw
         import json as _json
