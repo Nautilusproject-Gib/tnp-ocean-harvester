@@ -27,6 +27,19 @@ h1,h2,h3{font-family:Lato,"Helvetica Neue",Helvetica,Arial,sans-serif;font-weigh
 button{font:inherit;cursor:pointer}
 button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 a{color:var(--data)}
+.cmp{display:grid;gap:10px;padding:4px 2px}
+.cmp .row{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center}
+.cmp .lab{font-size:13px;color:var(--muted)}
+.cmp .pair{display:grid;gap:3px}
+.cmp .bar{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;font-size:12px}
+.cmp .bar i{display:block;height:11px;border-radius:3px;background:var(--data)}
+.cmp .bar.usual i{background:#BFE0EE}
+.cmp .bar b{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.dchip{display:inline-block;padding:1px 7px;margin:1px 3px 1px 0;border-radius:99px;font-size:11.5px;
+  background:#EAF4F8;color:var(--blue-deep);white-space:nowrap}
+.dchip.warm{background:#FDE7DF;color:#8A3A16}
+.dchip.dark{background:#E8E6F5;color:#3D3470}
+@media (max-width:640px){.cmp .row{grid-template-columns:1fr}}
 
 /* sample banner */
 .sample{background:var(--sand-bg);color:#6A4510;border:1px solid #E7C98F;padding:10px 14px;margin-top:16px;font-size:14px}
@@ -299,6 +312,7 @@ details ul{padding-left:18px;margin:8px 0}
     <div class="section-head">
       <h2 id="wildlife-h">What people are seeing</h2>
       <p>Every sighting reported through NEMO inside the area this dashboard covers. Positions are rounded to a 1&nbsp;km square, and whales, dolphins and turtles are shown without a position at all.</p>
+      <p class="note" id="wfresh"></p>
     </div>
     <div class="panel">
       <div class="scroll"><div class="wcal" id="wcal" role="img" aria-label="Sightings by group and month"></div></div>
@@ -311,6 +325,29 @@ details ul{padding-left:18px;margin:8px 0}
         <tbody id="wsight-rows"></tbody>
       </table>
     </div>
+  </section>
+
+  <section class="section" id="watch-section" aria-labelledby="watch-h" hidden>
+    <div class="section-head">
+      <h2 id="watch-h">What makes a <span id="watch-name">sea sparkle</span> night?</h2>
+      <p id="watch-intro"></p>
+    </div>
+    <div class="panel" id="watch-profile-panel">
+      <div id="watch-profile"></div>
+      <p class="note" id="watch-profile-note"></p>
+    </div>
+    <div class="table-wrap" style="margin-top:12px">
+      <table>
+        <caption class="note" style="caption-side:bottom;text-align:left;padding:10px 12px" id="watch-caption"></caption>
+        <thead><tr>
+          <th scope="col">When</th><th scope="col">Reports</th><th scope="col">Sea</th>
+          <th scope="col">Chlorophyll</th><th scope="col">Wind before</th><th scope="col">Moon</th>
+          <th scope="col">What was going on</th>
+        </tr></thead>
+        <tbody id="watch-rows"></tbody>
+      </table>
+    </div>
+    <p class="note" id="watch-note"></p>
   </section>
 
   <section class="section" aria-labelledby="about-h">
@@ -439,6 +476,7 @@ const VARS = [
   {g:"physical", v:"precip", title:"Rain", loc:"gibraltar_airport", where:"Airport", unit:"mm", dp:1, up:"Wetter", down:"Drier", floor0:true, card:false},
   // wildlife (NEMO sightings)
   {g:"wildlife", v:"wsight", special:"sightings", title:"Sightings", loc:"area"},
+  {g:"wildlife", v:"wwatch", special:"watch", title:"Sea sparkle watch", loc:"area"},
   {g:"wildlife", v:"wgel", special:"gelatinous", title:"Jellyfish and gelatinous", loc:"area"},
   {g:"wildlife", v:"winv", special:"invasive", title:"Invasive watch", loc:"area"},
   {g:"wildlife", v:"wstrand", special:"strandings", title:"Strandings reported", loc:"area"},
@@ -597,6 +635,7 @@ async function renderCards(){
     if (cfg.special === "light") return lightCard(cfg);
     if (cfg.special === "bloom") return bloomCard(cfg);
     if (cfg.special === "sightings") return sightingsCard(cfg);
+    if (cfg.special === "watch") return watchCard(cfg);
     if (cfg.special === "gelatinous") return gelatinousCard(cfg);
     if (cfg.special === "invasive") return invasiveCard(cfg);
     if (cfg.special === "strandings") return strandingsCard(cfg);
@@ -895,6 +934,8 @@ const GROUP_LABELS = {"Marine Invertebrates":"Invertebrates", "Marine Phytoplank
   "Seagrass":"Seagrass", "Unrecorded":"Not recorded", "Unknown":"Unidentified"};
 const gname = g => GROUP_LABELS[g] || g;
 const topEntries = (obj, n) => Object.entries(obj || {}).sort((a,b) => b[1]-a[1]).slice(0, n);
+const daysSince = d => d ? Math.round((Date.now() - Date.parse(d + "T00:00:00Z")) / 864e5) : null;
+const areaLabel = c => { const a = AREAS.find(x => x[0] === c); return a ? a[1] : (c || "All areas"); };
 
 function sightingsCard(cfg){
   const w = wildlife;
@@ -908,6 +949,32 @@ function sightingsCard(cfg){
     <div class="foot"><span>To ${fmtDate(w.last)}</span><span>NEMO</span></div>
   </button>`;
 }
+function watchSpecies(){ return (wildlife && wildlife.watch && wildlife.watch[0]) || null; }
+
+function watchCard(cfg){
+  const w = watchSpecies();
+  if (!w || !w.records) return emptyCard(cfg, "All areas", "Appears once NEMO records are being harvested.");
+  const ev = w.events[0], days = daysSince(w.last), yr = String(new Date().getUTCFullYear());
+  const thisYear = (w.by_year || {})[yr] || 0;
+  const best = Object.entries(w.by_year || {}).sort((a,b) => b[1]-a[1])[0];
+  const chip = days <= 30
+    ? `<span class="chip green"><span aria-hidden="true">▲</span>Seen in the last month</span>`
+    : `<span class="chip normal"><span aria-hidden="true">●</span>${days} days since the last one</span>`;
+  const names = (w.driver_labels || {});
+  return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
+    <div class="label"><span>${esc(w.name)}</span><span class="where">${esc(areaLabel(w.area))}</span></div>
+    <div class="value num">${fmtShort(w.last)}<span class="unit">last reported</span></div>
+    ${chip}
+    <p class="context">${w.records} records on ${w.events.length} separate occasions since ${w.first.slice(0,4)}.
+      ${best ? `${best[0]} was the biggest year with ${best[1]}, and ${yr} has ${thisYear}.` : ""}</p>
+    ${ev ? `<p class="context">Last time: sea <span class="ex">${fmt(ev.sst,1)} °C</span>${
+        ev.sst_vs_usual != null ? ` (${ev.sst_vs_usual >= 0 ? "+" : ""}${fmt(ev.sst_vs_usual,1)} on the usual)` : ""},
+      moon <span class="ex">${ev.moon_pct}% lit</span>${
+        ev.drivers.length ? `, ${ev.drivers.map(d => (names[d] || d).toLowerCase()).join(", ")}` : ""}.</p>` : ""}
+    <div class="foot"><span>${esc(w.scientific)}</span><span>Night-time records</span></div>
+  </button>`;
+}
+
 function gelatinousCard(cfg){
   const w = wildlife;
   if (!w || !w.gelatinous) return emptyCard(cfg, "All areas", "Appears once NEMO records are being harvested.");
@@ -917,6 +984,11 @@ function gelatinousCard(cfg){
   else if (st.state === "elevated") chip = `<span class="chip green"><span aria-hidden="true">●</span>Busier than usual</span>`;
   else chip = `<span class="chip normal"><span aria-hidden="true">●</span>Nothing unusual reported</span>`;
   const last = g.events.length ? g.events[g.events.length-1] : null;
+  const recent = g.water_column_recent + g.drifter_recent;
+  if (!recent && g.last_record){
+    const since = daysSince(g.last_record);
+    chip = `<span class="chip normal"><span aria-hidden="true">●</span>None reported for ${since} days</span>`;
+  }
   return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
     <div class="label"><span>${cfg.title}</span><span class="where">All areas</span></div>
     <div class="value num">${fmt(g.water_column_recent + g.drifter_recent, 0)}<span class="unit">in the last 30 days</span></div>
@@ -926,6 +998,7 @@ function gelatinousCard(cfg){
       <div><span>Blown in (man o' war and kin)</span><b>${g.drifter_recent}</b></div>
       <div><span>Stinging species</span><b>${g.stinging_recent}</b></div>
     </div>
+    ${!recent && g.last_record ? `<p class="context">Nothing gelatinous has been reported since ${fmtDate(g.last_record)}. That is a quiet spell rather than a gap in the data: ${fmt(g.total,0)} records in all, and August is by far the busiest month.</p>` : ""}
     <p class="context">${last ? `Last busy spell: ${fmtShort(last.start)} ${last.start.slice(0,4)}, ${last.days} day${last.days>1?"s":""}, ${last.records} records.` : "No busy spells detected yet."} A day counts when jellyfish, salps or comb jellies make up most of what is reported.</p>
     <div class="foot"><span>${g.events.length} spells on record</span><span>Effort-corrected</span></div>
   </button>`;
@@ -955,10 +1028,12 @@ function strandingsCard(cfg){
   return `<button type="button" class="card" data-var="${cfg.v}" aria-current="false">
     <div class="label"><span>${cfg.title}</span><span class="where">All areas</span></div>
     <div class="value num">${thisYear}<span class="unit">reported this year</span></div>
-    <p class="context">Since ${Object.keys(s.by_year || {})[0] || ""}, by group:</p>
-    <div class="rows num">${animals.map(([g, n]) => `<div><span>${esc(gname(g))}</span><b>${n}</b></div>`).join("")}</div>
-    <p class="context">Dead or stranded animals reported through the app, ${fmt(s.candidates,0)} in total. TNP's own strandings log is the record of truth; these are the public reports that may or may not have reached it.</p>
-    <div class="foot"><span>${fmt(s.candidates, 0)} in total</span><span>App reports</span></div>
+    ${animals.length ? `<p class="context">Since ${Object.keys(s.by_year || {})[0] || ""}, by group:</p>
+    <div class="rows num">${animals.map(([g, n]) => `<div><span>${esc(gname(g))}</span><b>${n}</b></div>`).join("")}</div>` : ""}
+    ${s.text_source === false
+      ? `<p class="context">Nothing to count yet. Strandings are picked out of the written description on a NEMO report, and the current export does not carry that field, so this is waiting on data rather than reporting a quiet year. TNP's own strandings log is the record of truth either way.</p>`
+      : `<p class="context">Dead or stranded animals reported through the app, ${fmt(s.candidates,0)} in total. TNP's own strandings log is the record of truth; these are the public reports that may or may not have reached it.</p>`}
+    <div class="foot"><span>${s.text_source === false ? "Awaiting the log" : fmt(s.candidates, 0) + " in total"}</span><span>App reports</span></div>
   </button>`;
 }
 
@@ -1433,6 +1508,63 @@ function renderWildlife(){
     <td>${r.verified ? "Yes" : '<span class="delta na">not yet</span>'}</td></tr>`).join("") ||
     `<tr><td colspan="5">No sightings in the last 30 days.</td></tr>`;
   $("wsight-caption").textContent = `The 12 most recent of ${wildlife.recent.records} sightings in the last ${wildlife.recent.days} days. Verified means TNP has checked a photograph or video.`;
+  // Sightings arrive as a periodic export, not live, so say plainly how current they are: a stale
+  // export and a genuinely quiet month look identical on the cards otherwise.
+  const age = daysSince(wildlife.last);
+  $("wfresh").innerHTML = `${fmt(wildlife.records,0)} records in all, the most recent on `
+    + `<strong>${fmtDate(wildlife.last)}</strong>` + (age > 14
+      ? `, ${age} days ago. The sea measurements above update every morning; sightings update when the NEMO export is refreshed, so anything newer than this is not in yet.`
+      : `, ${age === 0 ? "today" : age === 1 ? "yesterday" : age + " days ago"}.`);
+}
+
+const DRIVER_STYLE = {warm_sea:"warm", heatwave:"warm", dark_moon:"dark"};
+
+function renderWatch(){
+  const sec = $("watch-section"), w = watchSpecies();
+  if (!w || !w.records){ sec.hidden = true; return; }
+  sec.hidden = false;
+  const names = w.driver_labels || {}, nights = new Set(w.events.map(e => e.start)).size;
+  $("watch-name").textContent = w.name.toLowerCase();
+  $("watch-intro").textContent =
+    `${w.records} records of ${w.name} (${w.scientific}) since ${w.first.slice(0,4)}, on ${w.events.length} `
+    + `separate occasions. For each one the dashboard reads back what the sea, the wind and the moon were `
+    + `doing, so a bloom can be set against the conditions that tend to come with it.`;
+
+  const prof = w.profile || [];
+  $("watch-profile").innerHTML = `<div class="cmp">` + prof.map(r => {
+    const a = Math.abs(r.on_days), b = Math.abs(r.usual), max = Math.max(a, b) || 1;
+    const dp = r.unit === "mg/m³" ? 2 : (r.unit === "m³/s per km" ? 0 : 1);
+    return `<div class="row"><div class="lab">${esc(r.label)}<br><span style="font-size:11px">${esc(r.unit)}</span></div>
+      <div class="pair">
+        <div class="bar"><i style="width:${(a/max*100).toFixed(1)}%"></i><b>${fmt(r.on_days,dp)} on the nights</b></div>
+        <div class="bar usual"><i style="width:${(b/max*100).toFixed(1)}%"></i><b>${fmt(r.usual,dp)} usual for the date</b></div>
+      </div></div>`;
+  }).join("") + `</div>`;
+  $("watch-profile-note").textContent = prof.length
+    ? `Averages over the ${prof[0].n} days with a record, against the same dates in other years, so the season is held still.`
+    : "Not enough matching sea data yet to compare.";
+
+  $("watch-rows").innerHTML = w.events.slice(0, 20).map(e => {
+    const span = e.start === e.end ? fmtDate(e.start)
+      : `${fmtShort(e.start)} to ${fmtDate(e.end)}`;
+    const chips = (e.drivers || []).map(d =>
+      `<span class="dchip ${DRIVER_STYLE[d] || ""}">${esc(names[d] || d)}</span>`).join("") ||
+      `<span class="delta na">nothing unusual</span>`;
+    // -0.04 rounds to "-0.0" but is still >= 0, which used to print "+-0.0"
+    const d = e.sst_vs_usual == null ? null : (Math.abs(e.sst_vs_usual) < 0.05 ? 0 : e.sst_vs_usual);
+    const warm = d == null ? "" :
+      ` <span class="delta ${d > 0 ? "up" : d < 0 ? "down" : "na"}">${d > 0 ? "+" : ""}${fmt(d,1)}</span>`;
+    return `<tr><td>${span}</td><td class="num">${e.records}</td>
+      <td class="num">${fmt(e.sst,1)}&nbsp;°C${warm}</td>
+      <td class="num">${fmt(e.chl,2)}</td>
+      <td class="num">${fmt(e.wind_before,0)}${e.wind_usual != null ? ` <span class="delta na">vs ${fmt(e.wind_usual,0)}</span>` : ""}</td>
+      <td class="num">${e.moon_pct}%</td><td>${chips}</td></tr>`;
+  }).join("");
+  $("watch-caption").textContent =
+    `Every appearance, most recent first. Sea and chlorophyll are the averages across the days reported; `
+    + `wind is the three days beforehand, in km/h, against what is usual for the date; moon is how much of `
+    + `the disc was lit.`;
+  $("watch-note").textContent = w.note || "";
 }
 
 /* ---------------- sources ---------------- */
@@ -1512,6 +1644,7 @@ async function boot(){
   renderDust();
   renderEvents();
   renderWildlife();
+  renderWatch();
 }
 boot();
 
