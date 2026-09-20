@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: tnp-harvester           # never runs alongside the daily harvest or a manual backfill
@@ -70,6 +71,7 @@ jobs:
         run: python harvest.py status
 
       - name: Save SQLite database
+        id: save
         if: always() && env.DATABASE_URL == '' && steps.catchup.outcome != 'skipped' && hashFiles('data/tnp_ocean.db') != ''
         uses: actions/cache/save@v4
         with:
@@ -83,3 +85,29 @@ jobs:
           name: tnp-db-backup
           path: data/tnp_ocean.db
           retention-days: 30
+
+      # One database is ~2GB and every run saves a new copy, so a repo's 10GB of cache fills in
+      # under a week and GitHub starts evicting entries on its own schedule. Deleting our older
+      # copies here keeps exactly one, the one this run just saved. The 30 day artifact backup
+      # above is the fallback if that copy ever turns out to be bad.
+      - name: Delete older copies of the database cache
+        # only when this run actually saved one: otherwise there is nothing to keep
+        if: always() && steps.save.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: tnp-db-${{ github.run_id }}
+        run: |
+          LIST=$(gh cache list --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"')
+          if ! echo "$LIST" | grep -q " $KEEP$"; then
+            echo "this run's cache ($KEEP) is not listed yet, leaving the others alone"
+            exit 0
+          fi
+          gh cache list --limit 100 --json id,key \
+            --jq '.[] | select(.key | startswith("tnp-db-")) | "\(.id) \(.key)"' \
+          | while read -r id key; do
+              if [ "$key" != "$KEEP" ]; then
+                echo "deleting $key"
+                gh cache delete "$id" || true
+              fi
+            done
