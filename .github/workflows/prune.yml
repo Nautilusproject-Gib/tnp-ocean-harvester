@@ -1,0 +1,81 @@
+name: Prune unused data
+
+# Housekeeping, run by hand. Sources get renamed and variables get dropped, but their rows stay in
+# the database and travel in the cache on every single run. This lists the series that nothing in
+# config.yaml asks for any more, and only deletes them if you tick the box.
+#
+# It is deliberately cautious: the list is printed first, nothing happens without "apply", and the
+# database is kept as a downloadable artifact for 30 days afterwards.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Actually delete? Leave unticked to just see the list."
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tnp-harvester
+  cancel-in-progress: false
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore SQLite database
+        if: env.DATABASE_URL == ''
+        uses: actions/cache/restore@v4
+        with:
+          path: data/tnp_ocean.db
+          key: tnp-db-${{ github.run_id }}
+          restore-keys: tnp-db-
+
+      - name: Size before
+        run: ls -lh data/tnp_ocean.db || echo "no database file (using DATABASE_URL)"
+
+      - name: What would go
+        run: python harvest.py prune
+
+      - name: Delete it
+        id: prune
+        if: ${{ github.event.inputs.apply == 'true' }}
+        run: python harvest.py prune --apply
+
+      - name: Size after
+        if: ${{ github.event.inputs.apply == 'true' }}
+        run: ls -lh data/tnp_ocean.db || true
+
+      # Only written back when something was actually deleted, so a dry run cannot disturb the
+      # database the harvest is using.
+      - name: Save SQLite database
+        if: ${{ github.event.inputs.apply == 'true' && env.DATABASE_URL == '' && hashFiles('data/tnp_ocean.db') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: data/tnp_ocean.db
+          key: tnp-db-${{ github.run_id }}
+
+      - name: Keep a backup copy of the database (30 days)
+        if: ${{ github.event.inputs.apply == 'true' && env.DATABASE_URL == '' && hashFiles('data/tnp_ocean.db') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tnp-db-after-prune
+          path: data/tnp_ocean.db
+          retention-days: 30
