@@ -310,6 +310,53 @@ class Database:
             return None
         return datetime.fromisoformat(v) if isinstance(v, str) else v
 
+    def orphans(self, config: dict):
+        """Series in the database that nothing in config.yaml asks for any more.
+
+        Sources get renamed and variables get dropped, but their rows stay behind, and the whole
+        database travels in the Actions cache on every run. A series is dead weight when its source
+        is no longer configured, or when its variable is not in the variable registry: those two
+        tests are deliberately coarse, because a variable that is still registered might be read by
+        a card, a context line or a bias correction rather than by the chart, and guessing at that
+        from the dashboard would eventually delete something that is quietly in use.
+        """
+        sources = set(config.get("sources") or {})
+        variables = set(config.get("variables") or {})
+        out = []
+        for source, variable, location, n, first, last, _valid in self.status():
+            if source not in sources:
+                reason = "source not in config.yaml"
+            elif variable not in variables:
+                reason = "variable not in config.yaml"
+            else:
+                continue
+            out.append({"source": source, "variable": variable, "location": location,
+                        "rows": int(n), "first": first, "last": last, "reason": reason})
+        return out
+
+    def prune(self, rows) -> int:
+        """Delete the given series and reclaim the space. Nothing is deleted without being listed."""
+        deleted = 0
+        with self.cursor() as cur:
+            for r in rows:
+                cur.execute(
+                    f"DELETE FROM observations WHERE source={self.ph} AND variable={self.ph} "
+                    f"AND location={self.ph}",
+                    (r["source"], r["variable"], r["location"]),
+                )
+                deleted += max(cur.rowcount or 0, 0)
+            gone = {r["source"] for r in rows}
+            for source in gone:
+                cur.execute(f"SELECT COUNT(*) FROM observations WHERE source={self.ph}", (source,))
+                if cur.fetchone()[0] == 0:
+                    # the run history of a source with no rows left would otherwise keep claiming
+                    # coverage back to 1982 for data that is no longer there
+                    cur.execute(f"DELETE FROM harvest_runs WHERE source={self.ph}", (source,))
+        if self.dialect == "sqlite" and deleted:
+            self.conn.commit()
+            self.conn.execute("VACUUM")      # a delete alone leaves the file the same size
+        return deleted
+
     def status(self):
         with self.cursor() as cur:
             cur.execute(
