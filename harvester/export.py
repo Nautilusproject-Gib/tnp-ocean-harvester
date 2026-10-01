@@ -380,7 +380,7 @@ def load_strandings(cfg: dict, root: Path, log=print):
 
 
 def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out_dir: Path, log=print,
-                    triggers: dict | None = None):
+                    triggers: dict | None = None, today=None):
     """Read NEMO records, attach the conditions, and write the public summary and the private file."""
     import yaml
 
@@ -431,7 +431,10 @@ def export_wildlife(config: dict, wcfg: dict, merged_by_key: dict, tide_fit, out
                                              float(wcfg.get("bloom_min_share", 0.4)))
     drift_index = wl.daily_index(records, records["gelatinous"] == "drifter")
     recent_days = int(wcfg.get("recent_days", 30))
-    cutoff = day.max() - pd.Timedelta(days=recent_days)
+    # Counted back from today, not from the newest record in the file. Anchoring on the newest
+    # record means a single date typed wrong puts the window in the future, where there is nothing
+    # to find, and the section then reports no sightings while the file is full of them.
+    cutoff = pd.Timestamp(today or datetime.now(timezone.utc).date()) - pd.Timedelta(days=recent_days)
     recent = records[day > cutoff]
     payload = {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
@@ -736,7 +739,7 @@ def export(config: dict, db: Database, log=print, today=None):
         }
         try:
             n_w = export_wildlife(config, wcfg, merged_by_key, tide_fit, out_dir, log=log,
-                                  triggers=wildlife_triggers)
+                                  triggers=wildlife_triggers, today=today)
             log(f"Wildlife: {n_w} sightings processed")
         except FileNotFoundError as e:
             log(f"Wildlife: skipped ({e})")

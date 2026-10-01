@@ -94,16 +94,56 @@ def read_records(text_or_rows, time_format: str | None = "%d/%m/%Y %H:%M") -> pd
         extra = [c for c in df.columns if c.startswith("unnamed")]
         if extra:
             df = df.rename(columns={extra[0]: "visibility"})
-    raw_time = df["local_time"]
-    if time_format:
-        df["local_time"] = pd.to_datetime(raw_time, format=time_format, errors="coerce")
-        # A configured format that does not fit the file would silently throw every record away, so
-        # fall back to working the format out rather than publishing an empty wildlife section.
-        if len(df) and df["local_time"].isna().mean() > 0.5:
-            df["local_time"] = pd.to_datetime(raw_time, errors="coerce")
-    else:
-        df["local_time"] = pd.to_datetime(raw_time, errors="coerce")
-    return df.dropna(subset=["local_time"])
+    df["local_time"] = parse_local_time(df["local_time"], time_format)
+    df = df.dropna(subset=["local_time"])
+    return drop_impossible_dates(df)
+
+
+def parse_local_time(raw: pd.Series, time_format: str | None = None) -> pd.Series:
+    """Dates as the export writes them -> timestamps, reading 12/09/2026 as 12 September.
+
+    The export has changed shape more than once, so a configured format is tried first and the file
+    is worked out from scratch when that format does not fit. The order of the fallbacks matters.
+    ISO (2026-09-12) is tried first because it cannot be read two ways. Everything else is read day
+    first, because the log is kept in Gibraltar and 12/09/2026 there is the twelfth of September.
+    Letting pandas guess reads it as the ninth of December, which does not fail and does not warn.
+    It quietly files a September sighting in December, and every monthly count, bloom date and
+    recent list downstream is then wrong in a way nothing would flag.
+    """
+    text = raw.astype(str).str.strip()
+    configured = (pd.to_datetime(raw, format=time_format, errors="coerce") if time_format
+                  else pd.Series(pd.NaT, index=raw.index, dtype="datetime64[ns]"))
+
+    # Each row is read by the convention its own text follows, rather than one convention being
+    # chosen for the file. A part-converted export holding both spellings used to lose whichever
+    # half lost the vote, and dayfirst applied to 2026-12-08 turns it into 12 August.
+    iso_like = text.str.match(r"^\d{4}-\d{2}-\d{2}")
+    out = pd.Series(pd.NaT, index=raw.index, dtype="datetime64[ns]")
+    if iso_like.any():
+        out[iso_like] = pd.to_datetime(text[iso_like], format="ISO8601", errors="coerce")
+    rest = ~iso_like
+    if rest.any():
+        out[rest] = pd.to_datetime(text[rest], dayfirst=True, errors="coerce")
+    # the configured format wins where it worked, and these fill the rows it could not read, so a
+    # file that is half one spelling and half another keeps all of its records
+    return configured.fillna(out)
+
+
+def drop_impossible_dates(df: pd.DataFrame, today=None, grace_days: int = 2) -> pd.DataFrame:
+    """Remove records dated in the future. Nobody reports a sighting before making it.
+
+    One mistyped year is enough to drag the latest date months ahead, and anything that measures
+    "the last thirty days" from the newest record then looks at an empty window and reports that
+    nothing has been seen.
+    """
+    if df.empty or "local_time" not in df:
+        return df
+    limit = pd.Timestamp(today or datetime.utcnow().date()) + pd.Timedelta(days=grace_days)
+    ahead = df["local_time"] > limit
+    if ahead.any():
+        print(f"[wildlife] ignoring {int(ahead.sum())} record(s) dated after "
+              f"{limit.date()}: {sorted(df.loc[ahead, 'local_time'].dt.date.unique())[:5]}")
+    return df[~ahead]
 
 
 def to_utc(local: pd.Series) -> pd.Series:
